@@ -34,7 +34,7 @@ class ToolDispatcher:
     @observe(name="tool-call", as_type="tool", capture_input=True, capture_output=True)
     def call(self, tool_name: str, kwargs: dict, requesting_agent: str) -> str:
         start = time.time()
-        update_current_span(metadata={"agent": requesting_agent, "tool": tool_name})
+        update_current_span(name=tool_name, metadata={"agent": requesting_agent, "tool": tool_name})
         tool = self.tools.get(tool_name)
         if tool is None:
             message = f"Unknown tool: '{tool_name}'"
