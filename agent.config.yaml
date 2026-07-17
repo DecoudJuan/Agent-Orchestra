@@ -1,0 +1,12 @@
+workspace: ./target-repo
+llm:
+  model: gpt-4.1
+  embedding_model: text-embedding-3-small
+permissions:
+  read:
+    deny: [".env", "**/*.pem", "secrets/**", "node_modules/**"]
+  write:
+    deny: [".github/**", "package-lock.json", ".git/**"]
+commands:
+  deny: ["rm -rf", "git push", "git reset --hard"]
+  require_approval: ["npm install", "npm uninstall", "git commit"]

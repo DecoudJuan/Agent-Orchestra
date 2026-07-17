@@ -1,92 +1,242 @@
+"""All tools in a single file. Pure Python, cross-OS — except RunCommandTool,
+which runs real project commands via subprocess. Tools are instantiated and
+registered by hand in main.py (no plugin system)."""
+
 import os
 import subprocess
-import requests
 from pathlib import Path
 
+import requests
 
-def read_file(path: str) -> str:
-    try:
-        return Path(path).read_text(encoding="utf-8")
-    except FileNotFoundError:
-        return f"Error: archivo no encontrado: {path}"
-    except Exception as e:
-        return f"Error leyendo archivo: {e}"
+from core.tool import Tool, ToolType
+
+PATH_PARAM = {"path": {"type": "string", "description": "Absolute path"}}
 
 
-def write_file(path: str, content: str) -> str:
-    try:
-        Path(path).parent.mkdir(parents=True, exist_ok=True)
-        Path(path).write_text(content, encoding="utf-8")
-        return f"OK: archivo escrito en {path}"
-    except Exception as e:
-        return f"Error escribiendo archivo: {e}"
+class ListFilesTool(Tool):
+    name = "list_files"
+    description = "List files and directories under an absolute path, optionally filtered by a glob pattern."
+    type = ToolType.READ
+    parameters_schema = {
+        "type": "object",
+        "properties": {
+            "path": {"type": "string", "description": "Absolute path of the directory"},
+            "pattern": {"type": "string", "description": "Glob pattern, default '*'"},
+        },
+        "required": ["path"],
+    }
 
-
-def run_command(command: str) -> str:
-    try:
-        result = subprocess.run(
-            command,
-            shell=True,
-            capture_output=True,
-            text=True,
-            timeout=30,
-            encoding="utf-8",
-            errors="replace",
-        )
-        parts = []
-        if result.stdout:
-            parts.append(f"stdout:\n{result.stdout.rstrip()}")
-        if result.stderr:
-            parts.append(f"stderr:\n{result.stderr.rstrip()}")
-        parts.append(f"exit code: {result.returncode}")
-        return "\n".join(parts) if parts else "(sin output)"
-    except subprocess.TimeoutExpired:
-        return "Error: el comando superó el timeout de 30 segundos"
-    except Exception as e:
-        return f"Error ejecutando comando: {e}"
-
-
-def list_files(directory: str = ".") -> str:
-    try:
-        p = Path(directory)
-        entries = sorted(p.iterdir(), key=lambda e: (not e.is_dir(), e.name.lower()))
+    def execute(self, path: str, pattern: str = "*") -> str:
+        directory = Path(path)
+        if not directory.is_dir():
+            return f"Error: not a directory: {path}"
+        entries = sorted(directory.glob(pattern), key=lambda e: (not e.is_dir(), e.name.lower()))
         if not entries:
-            return "(directorio vacío)"
+            return "(no matches)"
+        return "\n".join(f"[{'DIR ' if e.is_dir() else 'FILE'}] {e.name}" for e in entries)
+
+
+class ReadFileTool(Tool):
+    name = "read_file"
+    description = "Read the content of a file given its absolute path."
+    type = ToolType.READ
+    parameters_schema = {"type": "object", "properties": PATH_PARAM, "required": ["path"]}
+
+    def execute(self, path: str) -> str:
+        try:
+            return Path(path).read_text(encoding="utf-8")
+        except FileNotFoundError:
+            return f"Error: file not found: {path}"
+        except Exception as e:
+            return f"Error reading file: {e}"
+
+
+class WriteFileTool(Tool):
+    name = "write_file"
+    description = "Write content to a file (absolute path), replacing it if it exists."
+    type = ToolType.WRITE
+    parameters_schema = {
+        "type": "object",
+        "properties": {
+            "path": {"type": "string", "description": "Absolute path"},
+            "content": {"type": "string", "description": "Full content to write"},
+        },
+        "required": ["path", "content"],
+    }
+
+    def execute(self, path: str, content: str) -> str:
+        try:
+            Path(path).parent.mkdir(parents=True, exist_ok=True)
+            Path(path).write_text(content, encoding="utf-8")
+            return f"OK: wrote {len(content)} chars to {path}"
+        except Exception as e:
+            return f"Error writing file: {e}"
+
+
+class DeleteFileTool(Tool):
+    name = "delete_file"
+    description = "Delete a file given its absolute path."
+    type = ToolType.WRITE
+    parameters_schema = {"type": "object", "properties": PATH_PARAM, "required": ["path"]}
+
+    def execute(self, path: str) -> str:
+        try:
+            Path(path).unlink()
+            return f"OK: deleted {path}"
+        except FileNotFoundError:
+            return f"Error: file not found: {path}"
+        except Exception as e:
+            return f"Error deleting file: {e}"
+
+
+class EditFileTool(Tool):
+    name = "edit_file"
+    description = (
+        "Find-and-replace edit: replaces old_str with new_str in a file. "
+        "old_str must appear exactly once."
+    )
+    type = ToolType.WRITE
+    parameters_schema = {
+        "type": "object",
+        "properties": {
+            "path": {"type": "string", "description": "Absolute path"},
+            "old_str": {"type": "string", "description": "Exact text to replace (must be unique in the file)"},
+            "new_str": {"type": "string", "description": "Replacement text"},
+        },
+        "required": ["path", "old_str", "new_str"],
+    }
+
+    def execute(self, path: str, old_str: str, new_str: str) -> str:
+        try:
+            content = Path(path).read_text(encoding="utf-8")
+        except FileNotFoundError:
+            return f"Error: file not found: {path}"
+        count = content.count(old_str)
+        if count == 0:
+            return "Error: old_str not found in file"
+        if count > 1:
+            return f"Error: old_str appears {count} times; it must be unique"
+        Path(path).write_text(content.replace(old_str, new_str), encoding="utf-8")
+        return f"OK: edited {path}"
+
+
+class RunCommandTool(Tool):
+    name = "run_command"
+    description = "Run a shell command (e.g. npm test, tsc --noEmit, eslint) in a working directory."
+    type = ToolType.EXECUTE
+    parameters_schema = {
+        "type": "object",
+        "properties": {
+            "command": {"type": "string", "description": "Command to run"},
+            "cwd": {"type": "string", "description": "Absolute path of the working directory"},
+        },
+        "required": ["command", "cwd"],
+    }
+
+    def execute(self, command: str, cwd: str) -> str:
+        try:
+            result = subprocess.run(
+                command, shell=True, cwd=cwd, capture_output=True, text=True,
+                timeout=120, encoding="utf-8", errors="replace",
+            )
+            parts = []
+            if result.stdout:
+                parts.append(f"stdout:\n{result.stdout.rstrip()}")
+            if result.stderr:
+                parts.append(f"stderr:\n{result.stderr.rstrip()}")
+            parts.append(f"exit code: {result.returncode}")
+            return "\n".join(parts)
+        except subprocess.TimeoutExpired:
+            return "Error: command timed out after 120 seconds"
+        except Exception as e:
+            return f"Error running command: {e}"
+
+
+class RagSearchTool(Tool):
+    name = "rag_search"
+    description = (
+        "Semantic search over the indexed documentation corpus (React, TypeScript, Vite). "
+        "Returns chunks with their source, heading and chunk_id."
+    )
+    type = ToolType.SEARCH
+    parameters_schema = {
+        "type": "object",
+        "properties": {
+            "query": {"type": "string", "description": "Search query"},
+            "top_k": {"type": "integer", "description": "Number of results, default 5"},
+        },
+        "required": ["query"],
+    }
+
+    def __init__(self, index_dir: str, llm_client, embedding_model: str):
+        self.index_dir = index_dir
+        self.llm_client = llm_client
+        self.embedding_model = embedding_model
+
+    def execute(self, query: str, top_k: int = 5) -> str:
+        try:
+            import chromadb
+        except ImportError:
+            return "Error: chromadb is not installed (pip install chromadb)."
+        client = chromadb.PersistentClient(path=self.index_dir)
+        try:
+            collection = client.get_collection("docs")
+        except Exception:
+            return (
+                "RAG index is empty: no corpus has been indexed yet. "
+                "Run 'python rag/build_index.py' after adding documents to rag/corpus/. "
+                "Fall back to web_search if you need external information."
+            )
+        embedding = (
+            self.llm_client.embeddings.create(model=self.embedding_model, input=query)
+            .data[0]
+            .embedding
+        )
+        results = collection.query(query_embeddings=[embedding], n_results=top_k)
+        if not results["documents"] or not results["documents"][0]:
+            return "No results found in the RAG index."
         lines = []
-        for entry in entries:
-            tag = "DIR " if entry.is_dir() else "FILE"
-            lines.append(f"[{tag}] {entry.name}")
+        for doc, meta in zip(results["documents"][0], results["metadatas"][0]):
+            lines.append(
+                f"--- source: {meta.get('source')} | heading: {meta.get('heading')} "
+                f"| chunk_id: {meta.get('chunk_id')} ---\n{doc}\n"
+            )
         return "\n".join(lines)
-    except FileNotFoundError:
-        return f"Error: directorio no encontrado: {directory}"
-    except Exception as e:
-        return f"Error listando archivos: {e}"
 
 
-def web_search(query: str) -> str:
-    api_key = os.getenv("TAVILY_API_KEY", "")
-    if not api_key:
-        return (
-            "[web_search] TAVILY_API_KEY no configurada en .env — resultado simulado.\n"
-            f"Query recibida: {query}\n"
-            "Para activar: agregar TAVILY_API_KEY=<tu_key> en .env"
-        )
-    try:
-        resp = requests.post(
-            "https://api.tavily.com/search",
-            json={"api_key": api_key, "query": query, "max_results": 5},
-            timeout=15,
-        )
-        resp.raise_for_status()
-        results = resp.json().get("results", [])
-        if not results:
-            return "Sin resultados para la búsqueda."
-        lines = []
-        for r in results:
-            lines.append(f"Title: {r.get('title', 'Sin título')}")
-            lines.append(f"URL:   {r.get('url', '')}")
-            lines.append(r.get("content", "")[:400])
-            lines.append("")
-        return "\n".join(lines).rstrip()
-    except Exception as e:
-        return f"Error en web_search: {e}"
+class WebSearchTool(Tool):
+    name = "web_search"
+    description = "Search the web (Tavily API). Use only when the RAG has no sufficient evidence."
+    type = ToolType.SEARCH
+    parameters_schema = {
+        "type": "object",
+        "properties": {"query": {"type": "string", "description": "Search query"}},
+        "required": ["query"],
+    }
+
+    def execute(self, query: str) -> str:
+        api_key = os.getenv("TAVILY_API_KEY", "")
+        if not api_key:
+            return (
+                "Error: TAVILY_API_KEY is not configured in .env — web search unavailable. "
+                f"Query received: {query}"
+            )
+        try:
+            resp = requests.post(
+                "https://api.tavily.com/search",
+                json={"api_key": api_key, "query": query, "max_results": 5},
+                timeout=15,
+            )
+            resp.raise_for_status()
+            results = resp.json().get("results", [])
+            if not results:
+                return "No results found."
+            lines = []
+            for r in results:
+                lines.append(f"Title: {r.get('title', '(no title)')}")
+                lines.append(f"URL:   {r.get('url', '')}")
+                lines.append(r.get("content", "")[:400])
+                lines.append("")
+            return "\n".join(lines).rstrip()
+        except Exception as e:
+            return f"Error in web_search: {e}"

@@ -2,3 +2,7 @@
 __pycache__/
 *.pyc
 *.pyo
+traces/
+rag/index/
+.agent/
+target-repo/

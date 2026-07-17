@@ -1,5 +1,0 @@
-{
-  "blocked_paths": [".env", ".env.example", "secrets/"],
-  "forbidden_commands": ["rm -rf", "git push --force", "format c:", "deltree", "rmdir /s"],
-  "allowed_dirs": ["."]
-}
