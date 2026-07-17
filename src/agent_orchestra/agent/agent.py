@@ -3,10 +3,11 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from src.agent_orchestra import loop
-from agent_orchestra.tools.dispatcher import LoopDetected, PermissionDenied, ToolDispatcher
+from src.agent_orchestra.agent import loop
+from src.agent_orchestra.tools.dispatcher import LoopDetected, PermissionDenied, ToolDispatcher
 from src.agent_orchestra.observability.tracing import observe
 from src.agent_orchestra.tools.tool_type import ToolType
+from src.agent_orchestra.agent.agent_result import AgentResult
 
 MAX_ITERATIONS = 20
 
@@ -18,18 +19,6 @@ PLAN_PROMPT = (
     "Output ONLY the plan — no tool calls — and wait. "
     "The user will approve, modify, or reject it."
 )
-
-class AgentResult(BaseModel):
-    agent: str
-    step_id: int
-    status: Literal["done", "blocked", "needs_more_info"]
-    summary: str
-    attempted: list[str] = Field(default_factory=list)
-    missing: str | None = None
-    sources: list[str] = Field(default_factory=list)
-    files_touched: list[str] = Field(default_factory=list)
-    proposed_memory_update: dict | None = None
-
 
 RESULT_INSTRUCTION = (
     "\n\nWhen you finish, reply with ONLY a JSON object (no markdown fences, no extra text) "

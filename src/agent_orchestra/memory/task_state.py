@@ -1,11 +1,11 @@
+from __future__ import annotations
+
 import json
 from pathlib import Path
-from typing import Literal
-
+from typing import Literal, TYPE_CHECKING
 from pydantic import BaseModel, Field
 
-from src.agent_orchestra.agent import AgentResult
-
+from src.agent_orchestra.agent.agent_result import AgentResult
 
 class Step(BaseModel):
     id: int

@@ -5,11 +5,11 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from src.agent_orchestra.agent import Agent
+from src.agent_orchestra.agent import Agent, SubagentTool
 from src.agent_orchestra.observability import flush_traces, get_openai_client, trace_attributes
-from src.agent_orchestra.tools.action_tracker import ActionTracker
-from src.agent_orchestra.config import load_config
-from src.agent_orchestra.modes import Modes
+from src.agent_orchestra.memory.action_tracker import ActionTracker
+from src.agent_orchestra.agent.config import load_config
+from src.agent_orchestra.agent.modes import Modes
 from src.agent_orchestra.tools import ToolDispatcher
 from src.agent_orchestra.memory import ProjectMemory
 from src.agent_orchestra.memory import TaskState
@@ -20,7 +20,6 @@ from src.agent_orchestra.tools import (
     RagSearchTool,
     ReadFileTool,
     RunCommandTool,
-    SubagentTool,
     WebSearchTool,
     WriteFileTool,
 )
@@ -234,14 +233,13 @@ def main() -> None:
     try:
         while True:
             try:
-                task = input("Task> ").strip()
+                task = input("> ").strip()
             except (EOFError, KeyboardInterrupt):
                 print("\nBye!")
                 break
             if not task:
                 continue
 
-            # --- session commands ---
             if task.lower() in ("/exit", "exit", "quit"):
                 print("Bye!")
                 break

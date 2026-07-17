@@ -2,9 +2,9 @@ import time
 from fnmatch import fnmatch
 from pathlib import Path
 
-from src.agent_orchestra.config import AgentConfig
+from src.agent_orchestra.agent.config import AgentConfig
 from src.agent_orchestra.observability.tracing import mark_error, observe, update_current_span
-from src.agent_orchestra.tools.action_tracker import ActionTracker
+from src.agent_orchestra.memory.action_tracker import ActionTracker
 from src.agent_orchestra.tools.tool import Tool
 from src.agent_orchestra.tools.tool_type import ToolType
 
