@@ -26,6 +26,11 @@ class AgentMonitor:
         self.trace_path = Path(trace_dir) / f"trace-{int(time.time())}.jsonl"
         self.langfuse = None
         if os.getenv("LANGFUSE_PUBLIC_KEY") and os.getenv("LANGFUSE_SECRET_KEY"):
+            # Accept either env var name for the host (SDK versions differ).
+            host = os.getenv("LANGFUSE_HOST") or os.getenv("LANGFUSE_BASE_URL")
+            if host:
+                os.environ.setdefault("LANGFUSE_HOST", host)
+                os.environ.setdefault("LANGFUSE_BASE_URL", host)
             try:
                 from langfuse import Langfuse
 
