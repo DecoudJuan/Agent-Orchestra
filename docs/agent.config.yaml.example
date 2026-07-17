@@ -1,4 +1,4 @@
-workspace: ./target-repo
+workspace: ./project
 llm:
   model: gpt-4.1
   embedding_model: text-embedding-3-small

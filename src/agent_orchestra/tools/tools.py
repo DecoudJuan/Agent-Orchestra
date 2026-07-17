@@ -1,17 +1,19 @@
-"""All tools in a single file. Pure Python, cross-OS — except RunCommandTool,
-which runs real project commands via subprocess. Tools are instantiated and
-registered by hand in main.py (no plugin system)."""
-
 import os
 import subprocess
 from pathlib import Path
 
 import requests
 
-from core.tool import Tool, ToolType
+from src.agent_orchestra.agent import Agent
+from src.agent_orchestra.memory.project_memory import ProjectMemory
+from src.agent_orchestra.memory.task_state import TaskState
+from src.agent_orchestra.observability.tracing import retriever_observation
+from src.agent_orchestra.tools.tool import Tool
+from src.agent_orchestra.tools.tool_type import ToolType
+
+SUBAGENT_NAMES = ["explorer", "researcher", "implementer", "tester", "reviewer"]
 
 PATH_PARAM = {"path": {"type": "string", "description": "Absolute path"}}
-
 
 class ListFilesTool(Tool):
     name = "list_files"
@@ -35,7 +37,6 @@ class ListFilesTool(Tool):
             return "(no matches)"
         return "\n".join(f"[{'DIR ' if e.is_dir() else 'FILE'}] {e.name}" for e in entries)
 
-
 class ReadFileTool(Tool):
     name = "read_file"
     description = "Read the content of a file given its absolute path."
@@ -49,7 +50,6 @@ class ReadFileTool(Tool):
             return f"Error: file not found: {path}"
         except Exception as e:
             return f"Error reading file: {e}"
-
 
 class WriteFileTool(Tool):
     name = "write_file"
@@ -72,7 +72,6 @@ class WriteFileTool(Tool):
         except Exception as e:
             return f"Error writing file: {e}"
 
-
 class DeleteFileTool(Tool):
     name = "delete_file"
     description = "Delete a file given its absolute path."
@@ -87,7 +86,6 @@ class DeleteFileTool(Tool):
             return f"Error: file not found: {path}"
         except Exception as e:
             return f"Error deleting file: {e}"
-
 
 class EditFileTool(Tool):
     name = "edit_file"
@@ -119,7 +117,6 @@ class EditFileTool(Tool):
         Path(path).write_text(content.replace(old_str, new_str), encoding="utf-8")
         return f"OK: edited {path}"
 
-
 class RunCommandTool(Tool):
     name = "run_command"
     description = "Run a shell command (e.g. npm test, tsc --noEmit, eslint) in a working directory."
@@ -150,7 +147,6 @@ class RunCommandTool(Tool):
             return "Error: command timed out after 120 seconds"
         except Exception as e:
             return f"Error running command: {e}"
-
 
 class RagSearchTool(Tool):
     name = "rag_search"
@@ -192,7 +188,22 @@ class RagSearchTool(Tool):
             .data[0]
             .embedding
         )
-        results = collection.query(query_embeddings=[embedding], n_results=top_k)
+        with retriever_observation("rag-search", input={"query": query, "top_k": top_k}) as observation:
+            results = collection.query(query_embeddings=[embedding], n_results=top_k)
+            if observation is not None:
+                observation.update(
+                    output=results.get("documents", [[]])[0],
+                    metadata={
+                        "sources": [
+                            meta.get("source")
+                            for meta in results.get("metadatas", [[]])[0]
+                        ],
+                        "chunk_ids": [
+                            meta.get("chunk_id")
+                            for meta in results.get("metadatas", [[]])[0]
+                        ],
+                    },
+                )
         if not results["documents"] or not results["documents"][0]:
             return "No results found in the RAG index."
         lines = []
@@ -202,7 +213,6 @@ class RagSearchTool(Tool):
                 f"| chunk_id: {meta.get('chunk_id')} ---\n{doc}\n"
             )
         return "\n".join(lines)
-
 
 class WebSearchTool(Tool):
     name = "web_search"
@@ -240,3 +250,51 @@ class WebSearchTool(Tool):
             return "\n".join(lines).rstrip()
         except Exception as e:
             return f"Error in web_search: {e}"
+
+
+class SubagentTool(Tool):
+    """Wraps a subagent as a tool for the orchestrator."""
+
+    type = ToolType.DELEGATE
+
+    def __init__(
+        self,
+        subagent: Agent,
+        task_state: TaskState,
+        memory: ProjectMemory,
+        workspace: str,
+    ):
+        self.subagent = subagent
+        self.task_state = task_state
+        self.memory = memory
+        self.workspace = workspace
+        self.name = f"invoke_{subagent.name}"
+        self.description = f"Delegate one concrete instruction to the {subagent.name} subagent."
+        self.parameters_schema = {
+            "type": "object",
+            "properties": {
+                "instruction": {
+                    "type": "string",
+                    "description": "Clear, self-contained instruction for the subagent",
+                }
+            },
+            "required": ["instruction"],
+        }
+
+    def execute(self, instruction: str) -> str:
+        step = self.task_state.new_step(self.subagent.name, instruction)
+        print(f"\n[orchestrator] step {step.id} -> {self.subagent.name}: {instruction[:100]}")
+        task_input = {
+            "step_id": step.id,
+            "instruction": instruction,
+            "original_request": self.task_state.original_request,
+            "workspace": self.workspace,
+            "previous_steps": self.task_state.get_summaries_for(SUBAGENT_NAMES),
+            "project_memory": self.memory.load_relevant(self.subagent.name, instruction),
+        }
+        result = self.subagent.run(task_input)
+        self.task_state.apply(result)
+        if result.proposed_memory_update:
+            self.memory.apply_update(result.proposed_memory_update, result.agent, self.task_state.task_id)
+        print(f"[orchestrator] step {step.id} <- {self.subagent.name}: {result.status} â€” {result.summary[:100]}")
+        return result.model_dump_json()

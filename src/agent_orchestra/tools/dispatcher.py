@@ -1,14 +1,12 @@
-"""Single execution point for every tool call: permissions, loop detection,
-observability."""
-
 import time
 from fnmatch import fnmatch
 from pathlib import Path
 
-from .action_tracker import ActionTracker
-from .config import AgentConfig
-from .monitor import AgentMonitor
-from .tool import Tool, ToolType
+from src.agent_orchestra.config import AgentConfig
+from src.agent_orchestra.observability.tracing import mark_error, observe, update_current_span
+from src.agent_orchestra.tools.action_tracker import ActionTracker
+from src.agent_orchestra.tools.tool import Tool
+from src.agent_orchestra.tools.tool_type import ToolType
 
 
 class PermissionDenied(Exception):
@@ -25,36 +23,40 @@ class ToolDispatcher:
         tools: dict[str, Tool],
         config: AgentConfig,
         tracker: ActionTracker,
-        monitor: AgentMonitor,
     ):
         self.tools = tools
         self.config = config
         self.tracker = tracker
-        self.monitor = monitor
 
     def register(self, tool: Tool) -> None:
         self.tools[tool.name] = tool
 
+    @observe(name="tool-call", as_type="tool", capture_input=True, capture_output=True)
     def call(self, tool_name: str, kwargs: dict, requesting_agent: str) -> str:
         start = time.time()
+        update_current_span(metadata={"agent": requesting_agent, "tool": tool_name})
         tool = self.tools.get(tool_name)
         if tool is None:
-            raise PermissionDenied(f"Unknown tool: '{tool_name}'")
+            message = f"Unknown tool: '{tool_name}'"
+            mark_error(message)
+            raise PermissionDenied(message)
 
         try:
             self._check_permissions(tool, kwargs)
         except PermissionDenied as e:
-            self.monitor.log_tool_call(
-                requesting_agent, tool_name, kwargs, "", blocked=True,
-                latency=time.time() - start, reason=str(e),
-            )
+            mark_error(str(e))
             raise
 
         if tool.type != ToolType.DELEGATE:
             arg_preview = ", ".join(f"{k}={str(v)[:60]!r}" for k, v in kwargs.items())
             print(f"  [{requesting_agent}] {tool_name}({arg_preview})")
 
-        result = tool.execute(**kwargs)
+        try:
+            result = tool.execute(**kwargs)
+        except Exception as e:
+            mark_error(f"{type(e).__name__}: {e}")
+            raise
+
         result_sig = (result or "")[:200]
 
         if tool.type != ToolType.DELEGATE:
@@ -64,20 +66,19 @@ class ToolDispatcher:
                     f"Loop detected: '{tool_name}' called repeatedly with the same "
                     "arguments and same result. Change strategy or report blocked."
                 )
-                self.monitor.log_tool_call(
-                    requesting_agent, tool_name, kwargs, result, blocked=True,
-                    latency=time.time() - start, reason=reason,
-                )
+                mark_error(reason)
                 raise LoopDetected(reason)
             self.tracker.record(requesting_agent, tool_name, kwargs, result_sig)
 
-        self.monitor.log_tool_call(
-            requesting_agent, tool_name, kwargs, result, blocked=False,
-            latency=time.time() - start,
+        update_current_span(
+            metadata={
+                "agent": requesting_agent,
+                "tool": tool_name,
+                "tool_type": tool.type.value,
+                "latency_s": round(time.time() - start, 3),
+            }
         )
         return result
-
-    # --- permissions -----------------------------------------------------
 
     def _check_permissions(self, tool: Tool, kwargs: dict) -> None:
         if tool.type == ToolType.READ:
