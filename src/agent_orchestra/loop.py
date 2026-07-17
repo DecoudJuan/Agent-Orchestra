@@ -1,20 +1,9 @@
-"""Inner tool-use loop from the class TP, integrated into the multi-agent system.
-
-Same structure as the original harness: send messages to the LLM, execute tool
-calls, feed results back, repeat until stop. What changed to integrate it:
-- The global TOOLS list is now a `tools` parameter (each agent has its own).
-- `_dispatch`, guardrails and supervision moved into core/dispatcher.py
-  (ToolDispatcher applies the agent.config.yaml policies); the loop receives a
-  `dispatch` callback and treats its result as the tool output.
-- Plan mode moved up: the orchestrator agent now does the planning.
-Every BaseAgent.run() drives this same loop.
-"""
-
 import json
+
+from src.agent_orchestra.observability.tracing import mark_error, observe, update_current_span
 
 
 def _assistant_msg(message) -> dict:
-    """Convert an OpenAI response message to a dict for the history."""
     d: dict = {"role": "assistant", "content": message.content}
     if message.tool_calls:
         d["tool_calls"] = [
@@ -31,6 +20,19 @@ def _assistant_msg(message) -> dict:
     return d
 
 
+@observe(name="agent-loop-iteration", as_type="chain", capture_input=False)
+def _call_model(client, *, label: str, iteration: int, model: str, messages: list, tools: list[dict]):
+    update_current_span(metadata={"agent": label, "iteration": iteration, "model": model})
+    return client.chat.completions.create(
+        name=f"{label}:iteration-{iteration}",
+        model=model,
+        messages=messages,
+        tools=tools or None,
+        max_tokens=4096,
+    )
+
+
+@observe(name="agent-loop", as_type="agent", capture_input=False)
 def run(
     client,
     messages: list,
@@ -38,19 +40,12 @@ def run(
     system: str,
     tools: list[dict],
     dispatch,
-    on_llm_call=None,
     label: str = "agent",
     max_iterations: int = 20,
     max_tool_result_chars: int = 8000,
+    supervision_confirm=None,
 ) -> str | None:
-    """
-    Inner loop: send messages to the LLM, execute tools, repeat until stop.
-    Mutates `messages` in-place. Returns the final response text, or None if
-    max_iterations was reached without a final answer.
-
-    dispatch(tool_name: str, kwargs: dict) -> str  executes a tool call
-    on_llm_call(messages, response_message, usage)  optional observability hook
-    """
+    update_current_span(metadata={"agent": label, "model": model})
     full_messages = [{"role": "system", "content": system}] + messages
 
     iteration = 0
@@ -58,20 +53,23 @@ def run(
         iteration += 1
         print(f"  [{label} iter {iteration}] calling LLM...", end=" ", flush=True)
 
-        response = client.chat.completions.create(
-            model=model,
-            messages=full_messages,
-            tools=tools or None,
-            max_tokens=4096,
-        )
+        try:
+            response = _call_model(
+                client,
+                label=label,
+                iteration=iteration,
+                model=model,
+                messages=full_messages,
+                tools=tools,
+            )
+        except Exception as e:
+            mark_error(f"{type(e).__name__}: {e}")
+            raise
 
         choice = response.choices[0]
         finish_reason = choice.finish_reason
         message = choice.message
         print(f"finish={finish_reason}")
-
-        if on_llm_call:
-            on_llm_call(full_messages, message, response.usage)
 
         msg_dict = _assistant_msg(message)
         messages.append(msg_dict)
@@ -81,6 +79,7 @@ def run(
             return message.content or ""
 
         if finish_reason != "tool_calls":
+            mark_error(f"unexpected finish_reason: {finish_reason}")
             return f"(unexpected finish_reason: {finish_reason})"
 
         for tc in (message.tool_calls or []):
@@ -89,7 +88,11 @@ def run(
             except json.JSONDecodeError:
                 params = {}
 
-            result = dispatch(tc.function.name, params)
+            if supervision_confirm is not None and not supervision_confirm(tc.function.name, params):
+                result = "[DENIED by user] Tool call was rejected during supervision. Adjust your approach."
+            else:
+                result = dispatch(tc.function.name, params)
+
             tool_msg = {
                 "role": "tool",
                 "tool_call_id": tc.id,
@@ -98,4 +101,5 @@ def run(
             messages.append(tool_msg)
             full_messages.append(tool_msg)
 
+    mark_error(f"stopped after {max_iterations} iterations")
     return None

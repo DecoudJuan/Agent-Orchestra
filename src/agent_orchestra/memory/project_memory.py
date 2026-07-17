@@ -1,10 +1,3 @@
-"""Persistent per-project memory, stored inside the workspace at .agent/.
-
-Read: every agent, but only the slice the orchestrator passes as input.
-Write: only the orchestrator, via apply_update() from each subagent's
-proposed_memory_update.
-"""
-
 import json
 import time
 from pathlib import Path
@@ -16,7 +9,6 @@ MEMORY_FILES = {
     "useful_commands": "useful_commands.json",
 }
 
-# Which memory slices each agent gets as input.
 RELEVANT_KEYS = {
     "orchestrator": list(MEMORY_FILES),
     "explorer": ["architecture", "conventions", "dependencies"],
@@ -26,7 +18,6 @@ RELEVANT_KEYS = {
     "reviewer": ["architecture", "conventions"],
 }
 
-
 class ProjectMemory:
     def __init__(self, dir: Path):
         self.dir = Path(dir)
@@ -34,7 +25,6 @@ class ProjectMemory:
         (self.dir / "sessions").mkdir(parents=True, exist_ok=True)
 
     def load_relevant(self, subagent_name: str, topic_hint: str) -> dict:
-        """Filtered read: only the slices relevant to the requesting agent."""
         out: dict = {}
         for key in RELEVANT_KEYS.get(subagent_name, list(MEMORY_FILES)):
             path = self.dir / "memory" / MEMORY_FILES[key]
@@ -50,7 +40,6 @@ class ProjectMemory:
         return out
 
     def apply_update(self, update: dict, agent: str, task_id: str) -> None:
-        """Single write point, called only by the orchestrator side."""
         for key, value in update.items():
             if key == "architecture":
                 (self.dir / "memory" / MEMORY_FILES[key]).write_text(str(value), encoding="utf-8")
@@ -65,8 +54,6 @@ class ProjectMemory:
                 self._append_jsonl("bugs_investigated.jsonl", value, agent, task_id)
             else:
                 print(f"[memory] Ignored unknown memory key: '{key}'")
-
-    # --- helpers ----------------------------------------------------------
 
     def _merge_json(self, filename: str, value: dict) -> None:
         path = self.dir / "memory" / filename

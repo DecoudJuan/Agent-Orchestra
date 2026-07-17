@@ -1,13 +1,10 @@
-"""Shared task state. Owned exclusively by the orchestrator: subagents receive
-slices of it as input and never write to it directly."""
-
 import json
 from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from .base_agent import AgentResult
+from src.agent_orchestra.agent import AgentResult
 
 
 class Step(BaseModel):
@@ -32,7 +29,6 @@ class TaskState(BaseModel):
         return step
 
     def apply(self, result: AgentResult) -> None:
-        """Single write point for subagent results."""
         step = next((s for s in self.steps if s.id == result.step_id), None)
         if step is None:
             return
