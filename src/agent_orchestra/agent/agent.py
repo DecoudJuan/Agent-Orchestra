@@ -151,7 +151,7 @@ class Agent:
     def run(self, task_input: dict) -> AgentResult:
         step_id = int(task_input.get("step_id", 0))
 
-        if self.modes and self.modes.plan_mode:
+        if self.modes and self.modes.plan_mode and self.name == "orchestrator":
             approved_plan = self._request_plan(task_input)
             if approved_plan is None:
                 return AgentResult(
