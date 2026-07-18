@@ -14,27 +14,30 @@ MAX_ITERATIONS = 20
 _SUPERVISED_TYPES = {ToolType.WRITE, ToolType.EXECUTE}
 
 PLAN_PROMPT = (
-    "\n\nBefore executing any tool, produce a numbered plan listing every step you "
-    "intend to take (e.g. 1. read file X  2. write file Y  3. run tests). "
-    "Output ONLY the plan — no tool calls — and wait. "
-    "The user will approve, modify, or reject it."
+    "\n\n<planning_instructions>\n"
+    "Before executing any tool, you must produce a step-by-step plan.\n"
+    "1. Create a numbered plan listing every step you intend to take (e.g., 1. read file X  2. write file Y  3. run tests).\n"
+    "2. Think through the problem carefully before proposing the steps.\n"
+    "3. Output ONLY the plan—do not output any tool calls—and wait.\n"
+    "4. The user will review, approve, modify, or reject this plan.\n"
+    "</planning_instructions>"
 )
 
 RESULT_INSTRUCTION = (
-    "\n\nWhen you finish, reply with ONLY a JSON object (no markdown fences, no extra text) "
-    "with these keys:\n"
-    '- "status": "done" | "blocked" | "needs_more_info"\n'
-    '- "summary": short description of what you did / found\n'
-    '- "attempted": list of strings describing what you tried\n'
-    '- "missing": string with what you need to continue, or null\n'
-    '- "sources": list of strings, each prefixed by its origin: "repo:<path>", '
-    '"memory:<key>", "rag:<source>#<chunk_id>", "web:<url>", "inference:<claim>"\n'
-    '- "files_touched": list of absolute paths you created/modified/deleted\n'
-    '- "proposed_memory_update": object with keys among "architecture" (markdown string), '
-    '"conventions"/"dependencies"/"useful_commands" (objects to merge), "decision" (string), '
-    '"bug" (string) — or null if nothing worth remembering.\n'
-    "Never invent results: if you lack evidence, permissions or a clear request, return "
-    'status "blocked" with "attempted" and "missing" filled in.'
+    "\n\n<output_formatting_instructions>\n"
+    "When you finish your work, you must reply with ONLY a strictly valid JSON object. Do NOT include markdown fences, and do NOT include any extra conversational text.\n\n"
+    "The JSON object must contain exactly these keys:\n"
+    '- "status": Must be one of "done", "blocked", or "needs_more_info".\n'
+    '- "summary": A short, clear description of what you did or found.\n'
+    '- "attempted": A list of strings describing the actions you tried.\n'
+    '- "missing": A string explaining what you need to continue, or null if nothing is missing.\n'
+    '- "sources": A list of strings, each prefixed by its origin: "repo:<path>", "memory:<key>", "rag:<source>#<chunk_id>", "web:<url>", "inference:<claim>".\n'
+    '- "files_touched": A list of absolute paths for files you created, modified, or deleted.\n'
+    '- "proposed_memory_update": An object proposing durable memory updates. Valid keys are "architecture" (markdown string), "conventions", "dependencies", "useful_commands" (objects to merge), "decision" (string), "bug" (string). Use null if there is nothing worth remembering.\n\n'
+    "<constraints>\n"
+    "Never invent results. If you lack evidence, lack permissions, or lack a clear request, you must return status \"blocked\" with the \"attempted\" and \"missing\" fields populated accordingly.\n"
+    "</constraints>\n"
+    "</output_formatting_instructions>"
 )
 
 

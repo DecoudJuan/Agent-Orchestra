@@ -121,15 +121,16 @@ class RunCommandTool(Tool):
         "properties": {
             "command": {"type": "string", "description": "Command to run"},
             "cwd": {"type": "string", "description": "Absolute path of the working directory"},
+            "timeout": {"type": "integer", "description": "Optional timeout in seconds. Default is 120. Use a small value (e.g. 5 or 10) for long-running commands like dev servers to just capture their startup output."},
         },
         "required": ["command", "cwd"],
     }
 
-    def execute(self, command: str, cwd: str) -> str:
+    def execute(self, command: str, cwd: str, timeout: int = 120) -> str:
         try:
             result = subprocess.run(
                 command, shell=True, cwd=cwd, capture_output=True, text=True,
-                timeout=120, encoding="utf-8", errors="replace",
+                timeout=timeout, encoding="utf-8", errors="replace",
             )
             parts = []
             if result.stdout:
@@ -138,8 +139,15 @@ class RunCommandTool(Tool):
                 parts.append(f"stderr:\n{result.stderr.rstrip()}")
             parts.append(f"exit code: {result.returncode}")
             return "\n".join(parts)
-        except subprocess.TimeoutExpired:
-            return "Error: command timed out after 120 seconds"
+        except subprocess.TimeoutExpired as e:
+            stdout = e.stdout or ""
+            stderr = e.stderr or ""
+            parts = [f"Command timed out after {timeout} seconds. Output so far:"]
+            if stdout:
+                parts.append(f"stdout:\n{stdout.rstrip()}")
+            if stderr:
+                parts.append(f"stderr:\n{stderr.rstrip()}")
+            return "\n".join(parts)
         except Exception as e:
             return f"Error running command: {e}"
 

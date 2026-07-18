@@ -42,7 +42,13 @@ class ProjectMemory:
     def apply_update(self, update: dict, agent: str, task_id: str) -> None:
         for key, value in update.items():
             if key == "architecture":
-                (self.dir / "memory" / MEMORY_FILES[key]).write_text(str(value), encoding="utf-8")
+                path = self.dir / "memory" / MEMORY_FILES[key]
+                if path.exists() and path.read_text(encoding="utf-8").strip():
+                    current = path.read_text(encoding="utf-8").strip()
+                    new_content = f"{current}\n\n{value}"
+                    path.write_text(new_content, encoding="utf-8")
+                else:
+                    path.write_text(str(value), encoding="utf-8")
             elif key in ("conventions", "dependencies", "useful_commands"):
                 if isinstance(value, dict):
                     self._merge_json(MEMORY_FILES[key], value)
