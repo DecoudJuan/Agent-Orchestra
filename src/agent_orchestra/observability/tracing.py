@@ -55,6 +55,15 @@ def update_current_span(**kwargs: Any) -> None:
         pass
 
 
+def update_current_trace(**kwargs: Any) -> None:
+    if get_client is None:
+        return
+    try:
+        get_client().update_current_trace(**kwargs)
+    except Exception:
+        pass
+
+
 @contextmanager
 def trace_attributes(**kwargs: Any):
     if propagate_attributes is None:

@@ -6,4 +6,5 @@ from src.agent_orchestra.observability.tracing import (
     retriever_observation,
     trace_attributes,
     update_current_span,
+    update_current_trace,
 )
