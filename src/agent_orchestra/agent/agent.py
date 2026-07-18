@@ -88,7 +88,7 @@ class Agent:
             messages=messages,
             model=self.model,
             system=self._build_plan_system(),
-            tools=[], 
+            tools=[],
             dispatch=self._dispatch,
             label=f"{self.name}:plan",
             max_iterations=3,
@@ -119,12 +119,31 @@ class Agent:
                         break
                     lines.append(line)
                 modification = "\n".join(lines).strip()
-                return plan_text + "\n\n[User modification]: " + modification
+                messages.append({"role": "assistant", "content": plan_text})
+                messages.append({"role": "user", "content": f"Revise the plan based on my feedback:\n{modification}"})
+                print(f"\n  [{self.name}] Revising plan...\n")
+                revised = loop.run(
+                    client=self.llm_client,
+                    messages=messages,
+                    model=self.model,
+                    system=self._build_plan_system(),
+                    tools=[],
+                    dispatch=self._dispatch,
+                    label=f"{self.name}:plan-revision",
+                    max_iterations=3,
+                )
+                if not revised:
+                    print(f"  [{self.name}] Could not revise the plan. Keeping original.")
+                else:
+                    plan_text = revised
+                print("\n" + "─" * 60)
+                print(f"[{self.name}] Revised plan:\n")
+                print(plan_text)
+                print("─" * 60)
             else:
                 print("Please enter y, n, or m.")
 
     def _make_supervision_confirm(self):
-        """Return a callable suitable for loop.run(supervision_confirm=...)."""
 
         def confirm(tool_name: str, params: dict) -> bool:
             tool = self.dispatcher.tools.get(tool_name)
@@ -147,7 +166,7 @@ class Agent:
 
         return confirm
 
-    @observe(name="agent-run", as_type="agent", capture_input=False)
+    @observe(name="agent-run", as_type="agent", capture_input=True)
     def run(self, task_input: dict) -> AgentResult:
         step_id = int(task_input.get("step_id", 0))
 

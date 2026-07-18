@@ -6,7 +6,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 from src.agent_orchestra.agent import Agent, SubagentTool
-from src.agent_orchestra.observability import flush_traces, get_openai_client, trace_attributes, update_current_trace
+from src.agent_orchestra.observability import flush_traces, get_openai_client
 from src.agent_orchestra.memory.action_tracker import ActionTracker
 from src.agent_orchestra.agent.config import load_config
 from src.agent_orchestra.agent.modes import Modes
@@ -145,37 +145,25 @@ def run_task(task: str, config, llm_client, dispatcher, memory, modes: Modes | N
     task_state = TaskState(task_id=task_id, original_request=task)
     workspace = str(config.workspace_path)
 
-    with trace_attributes(session_id=task_id, metadata={"workspace": workspace}):
-        update_current_trace(
-            name="agent-task",
-            input={"task": task, "workspace": workspace},
-        )
-        subagents = [
-            build_explorer(dispatcher, config, llm_client, modes),
-            build_researcher(dispatcher, config, llm_client, modes),
-            build_implementer(dispatcher, config, llm_client, modes),
-            build_tester(dispatcher, config, llm_client, modes),
-            build_reviewer(dispatcher, config, llm_client, modes),
-        ]
-        for subagent in subagents:
-            dispatcher.register(SubagentTool(subagent, task_state, memory, workspace))
+    subagents = [
+        build_explorer(dispatcher, config, llm_client, modes),
+        build_researcher(dispatcher, config, llm_client, modes),
+        build_implementer(dispatcher, config, llm_client, modes),
+        build_tester(dispatcher, config, llm_client, modes),
+        build_reviewer(dispatcher, config, llm_client, modes),
+    ]
+    for subagent in subagents:
+        dispatcher.register(SubagentTool(subagent, task_state, memory, workspace))
 
-        orchestrator = build_orchestrator(dispatcher, config, llm_client, modes)
-        result = orchestrator.run(
-            {
-                "step_id": 0,
-                "instruction": task,
-                "workspace": workspace,
-                "project_memory": memory.load_relevant("orchestrator", task),
-            }
-        )
-        update_current_trace(
-            output={
-                "status": result.status,
-                "summary": result.summary,
-                "files_touched": result.files_touched,
-            }
-        )
+    orchestrator = build_orchestrator(dispatcher, config, llm_client, modes)
+    result = orchestrator.run(
+        {
+            "step_id": 0,
+            "instruction": task,
+            "workspace": workspace,
+            "project_memory": memory.load_relevant("orchestrator", task),
+        }
+    )
 
     task_state.save(str(memory.dir / "sessions" / f"{task_id}.json"))
 
