@@ -24,11 +24,21 @@ class Commands(BaseModel):
     deny: list[str] = Field(default_factory=list)
     require_approval: list[str] = Field(default_factory=list)
 
+class ToolsConfig(BaseModel):
+    # None (default) = every discovered tool is enabled. A non-empty allowlist
+    # restricts registration to exactly these tool names.
+    enabled: list[str] | None = None
+    # Tool names to skip (ignored when an `enabled` allowlist is given).
+    disabled: list[str] = Field(default_factory=list)
+    # Extra directories scanned for drop-in plugin modules.
+    plugin_dirs: list[str] = Field(default_factory=list)
+
 class AgentConfig(BaseModel):
     workspace: str = DEFAULTS["workspace"]
     llm: LlmConfig = Field(default_factory=LlmConfig)
     permissions: Permissions = Field(default_factory=Permissions)
     commands: Commands = Field(default_factory=Commands)
+    tools: ToolsConfig = Field(default_factory=ToolsConfig)
 
     @property
     def workspace_path(self) -> Path:

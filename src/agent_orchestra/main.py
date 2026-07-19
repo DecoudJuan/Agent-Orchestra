@@ -10,19 +10,9 @@ from src.agent_orchestra.observability import flush_traces, get_openai_client
 from src.agent_orchestra.memory.action_tracker import ActionTracker
 from src.agent_orchestra.agent.config import load_config
 from src.agent_orchestra.agent.modes import Modes
-from src.agent_orchestra.tools import ToolDispatcher
+from src.agent_orchestra.tools import PluginRegistry, ToolContext, ToolDispatcher
 from src.agent_orchestra.memory import ProjectMemory
 from src.agent_orchestra.memory import TaskState
-from src.agent_orchestra.tools import (
-    DeleteFileTool,
-    EditFileTool,
-    ListFilesTool,
-    RagSearchTool,
-    ReadFileTool,
-    RunCommandTool,
-    WebSearchTool,
-    WriteFileTool,
-)
 
 RAG_INDEX_DIR = str(Path(__file__).parent / "rag" / "index")
 
@@ -264,17 +254,15 @@ def main() -> None:
     tracker = ActionTracker()
     dispatcher = ToolDispatcher(tools={}, config=config, tracker=tracker)
 
-    for tool in (
-        ListFilesTool(),
-        ReadFileTool(),
-        WriteFileTool(),
-        DeleteFileTool(),
-        EditFileTool(),
-        RunCommandTool(),
-        RagSearchTool(RAG_INDEX_DIR, llm_client, config.llm.embedding_model),
-        WebSearchTool(),
-    ):
-        dispatcher.register(tool)
+    tool_context = ToolContext(
+        config=config,
+        llm_client=llm_client,
+        embedding_model=config.llm.embedding_model,
+        rag_index_dir=RAG_INDEX_DIR,
+    )
+    registered = PluginRegistry(tool_context, config).discover()
+    dispatcher.register_all(registered)
+    print(f"Tools     : {', '.join(sorted(t.name for t in registered))}")
 
     memory = ProjectMemory(config.workspace_path / ".agent")
     modes = Modes()
