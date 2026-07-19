@@ -5,6 +5,12 @@ from pathlib import Path
 import requests
 
 from src.agent_orchestra.observability.tracing import retriever_observation
+from src.agent_orchestra.tools.context import ToolContext
+from src.agent_orchestra.tools.permissions import (
+    EXECUTE_POLICY,
+    READ_POLICY,
+    WRITE_POLICY,
+)
 from src.agent_orchestra.tools.tool import Tool
 from src.agent_orchestra.tools.tool_type import ToolType
 
@@ -14,6 +20,7 @@ class ListFilesTool(Tool):
     name = "list_files"
     description = "List files and directories under an absolute path, optionally filtered by a glob pattern."
     type = ToolType.READ
+    permissions = READ_POLICY
     parameters_schema = {
         "type": "object",
         "properties": {
@@ -36,6 +43,7 @@ class ReadFileTool(Tool):
     name = "read_file"
     description = "Read the content of a file given its absolute path."
     type = ToolType.READ
+    permissions = READ_POLICY
     parameters_schema = {"type": "object", "properties": PATH_PARAM, "required": ["path"]}
 
     def execute(self, path: str) -> str:
@@ -50,6 +58,7 @@ class WriteFileTool(Tool):
     name = "write_file"
     description = "Write content to a file (absolute path), replacing it if it exists."
     type = ToolType.WRITE
+    permissions = WRITE_POLICY
     parameters_schema = {
         "type": "object",
         "properties": {
@@ -71,6 +80,7 @@ class DeleteFileTool(Tool):
     name = "delete_file"
     description = "Delete a file given its absolute path."
     type = ToolType.WRITE
+    permissions = WRITE_POLICY
     parameters_schema = {"type": "object", "properties": PATH_PARAM, "required": ["path"]}
 
     def execute(self, path: str) -> str:
@@ -89,6 +99,7 @@ class EditFileTool(Tool):
         "old_str must appear exactly once."
     )
     type = ToolType.WRITE
+    permissions = WRITE_POLICY
     parameters_schema = {
         "type": "object",
         "properties": {
@@ -116,6 +127,7 @@ class RunCommandTool(Tool):
     name = "run_command"
     description = "Run a shell command (e.g. npm test, tsc --noEmit, eslint) in a working directory."
     type = ToolType.EXECUTE
+    permissions = EXECUTE_POLICY
     parameters_schema = {
         "type": "object",
         "properties": {
@@ -171,6 +183,10 @@ class RagSearchTool(Tool):
         self.index_dir = index_dir
         self.llm_client = llm_client
         self.embedding_model = embedding_model
+
+    @classmethod
+    def build(cls, ctx: ToolContext) -> "RagSearchTool":
+        return cls(ctx.rag_index_dir, ctx.llm_client, ctx.embedding_model)
 
     def execute(self, query: str, top_k: int = 5) -> str:
         try:
