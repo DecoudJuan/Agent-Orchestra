@@ -31,8 +31,8 @@ COMMON_RULES = (
     "1. Always use ABSOLUTE paths in every file tool call. The workspace root is provided in your input.\n"
     "2. Prefix every source you report with its origin (e.g., repo:<path>, memory:<key>, rag:<source>#<chunk_id>, web:<url>, inference:<claim>).\n"
     "3. You cannot call other subagents. Work only with your own tools.\n"
-    "4. If a tool call returns [BLOCKED], do not retry it exactly as-is: change your approach or return status 'blocked'.\n"
-    "5. Return status 'blocked' (never invent or hallucinate) when the request is ambiguous, documentation is missing, a permission was denied, an error cannot be diagnosed, or a change is too risky.\n"
+    "4. If a tool call returns an error or [BLOCKED], do not give up immediately. Try to diagnose and fix the issue, or try a different approach.\n"
+    "5. Return status 'blocked' (never invent or hallucinate) ONLY when you have exhausted all alternative approaches, the request is completely ambiguous, or a change is too risky.\n"
     "</general_rules>"
 )
 
@@ -103,13 +103,14 @@ def build_tester(dispatcher, config, llm_client, modes=None) -> Agent:
     prompt = (
         "<role>\n"
         "You are the Tester subagent of an expert coding-agent system specialized in React + TypeScript + Vite.\n"
-        "Your responsibility is to validate results by rigorously running checks.\n"
+        "Your responsibility is to validate results by rigorously running checks or executing general commands.\n"
         "</role>\n\n"
         "<instructions>\n"
-        "1. Run necessary checks such as tests, build processes, type-checking (tsc --noEmit), linters, or other relevant commands.\n"
+        "1. Run necessary checks (tests, build, tsc, lint) or any general command requested by the user (like starting servers).\n"
         "2. Always pass the workspace root as the cwd (current working directory).\n"
-        "3. Report exact failures, including the relevant output excerpts.\n"
-        "4. Propose useful_commands memory updates whenever you discover or refine commands that work effectively for this project.\n"
+        "3. For long-running commands like dev servers (e.g., 'npm run dev'), you MUST set 'timeout: 5' to just capture their startup output. Otherwise, execution will block.\n"
+        "4. Report exact failures, including the relevant output excerpts.\n"
+        "5. Propose useful_commands memory updates whenever you discover or refine commands that work effectively for this project.\n"
         "</instructions>"
     )
     return _build_subagent("tester", prompt, ["run_command"], dispatcher, config, llm_client, modes)
@@ -141,14 +142,14 @@ def build_orchestrator(dispatcher, config, llm_client, modes=None) -> Agent:
         "- invoke_explorer: Understands the repository (structure, files, conventions).\n"
         "- invoke_researcher: Searches the RAG corpus and, as fallback, the web.\n"
         "- invoke_implementer: Writes, edits, or deletes code files.\n"
-        "- invoke_tester: Runs commands to validate (tests, build, tsc, lint).\n"
+        "- invoke_tester: Runs any commands in the terminal (tests, dev servers, scripts, builds).\n"
         "- invoke_reviewer: Reviews the changes against the original request.\n"
         "</available_subagents>\n\n"
         "<instructions>\n"
         "1. Invoke ONE subagent at a time. Use its result to thoughtfully decide the next step.\n"
         "2. Give each subagent a clear, self-contained instruction with the concrete context it needs (e.g., tell the implementer exactly which files and changes are needed, since it cannot read files).\n"
         "3. Follow a typical flow when appropriate: explore -> (research if needed) -> implement -> test -> review. Adapt this flow to the task; trivial questions may require fewer steps.\n"
-        "4. If a subagent returns 'blocked' or 'needs_more_info', do NOT retry the same instruction blindly. Change your strategy, try another subagent, or finish with status 'blocked'/'needs_more_info' and explain to the user what was attempted and what is missing.\n"
+        "4. If a subagent returns 'blocked', 'needs_more_info', or fails, try to formulate a different approach, use another subagent, or fix the underlying issue before giving up. Only finish with status 'blocked'/'needs_more_info' if you cannot resolve it after retries.\n"
         "5. In your final summary, strictly cite the sources reported by the subagents using their respective prefixes.\n"
         "</instructions>"
     )
@@ -163,9 +164,7 @@ def build_orchestrator(dispatcher, config, llm_client, modes=None) -> Agent:
     )
 
 
-def run_task(task: str, config, llm_client, dispatcher, memory, modes: Modes | None = None) -> None:
-    task_id = f"task-{int(time.time())}"
-    task_state = TaskState(task_id=task_id, original_request=task)
+def _setup_and_run(task_state: TaskState, instruction: str, config, llm_client, dispatcher, memory, modes: Modes | None = None) -> None:
     workspace = str(config.workspace_path)
 
     subagents = [
@@ -179,16 +178,22 @@ def run_task(task: str, config, llm_client, dispatcher, memory, modes: Modes | N
         dispatcher.register(SubagentTool(subagent, task_state, memory, workspace))
 
     orchestrator = build_orchestrator(dispatcher, config, llm_client, modes)
-    result = orchestrator.run(
-        {
-            "step_id": 0,
-            "instruction": task,
-            "workspace": workspace,
-            "project_memory": memory.load_relevant("orchestrator", task),
-        }
-    )
+    
+    input_data = {
+        "step_id": len(task_state.steps),
+        "instruction": instruction,
+        "workspace": workspace,
+        "project_memory": memory.load_relevant("orchestrator", task_state.original_request),
+    }
+    
+    if task_state.steps:
+        subagent_names = ["explorer", "researcher", "implementer", "tester", "reviewer"]
+        input_data["previous_steps"] = task_state.get_summaries_for(subagent_names)
+        input_data["original_request"] = task_state.original_request
 
-    task_state.save(str(memory.dir / "sessions" / f"{task_id}.json"))
+    result = orchestrator.run(input_data)
+
+    task_state.save(str(memory.dir / "sessions" / f"{task_state.task_id}.json"))
 
     print("\n" + "=" * 60)
     print(f"Status:  {result.status}")
@@ -202,12 +207,40 @@ def run_task(task: str, config, llm_client, dispatcher, memory, modes: Modes | N
         print("Sources:")
         for src in all_sources:
             print(f"  - {src}")
-    print(f"Session saved: .agent/sessions/{task_id}.json")
+    print(f"Session saved: .agent/sessions/{task_state.task_id}.json")
     print("=" * 60)
+
+
+def run_task(task: str, config, llm_client, dispatcher, memory, modes: Modes | None = None) -> None:
+    task_id = f"task-{int(time.time())}"
+    task_state = TaskState(task_id=task_id, original_request=task)
+    _setup_and_run(task_state, task, config, llm_client, dispatcher, memory, modes)
+
+
+def resume_task(task_id: str, new_instruction: str, config, llm_client, dispatcher, memory, modes: Modes | None = None) -> None:
+    session_file = memory.dir / "sessions" / f"{task_id}.json"
+    if not session_file.exists():
+        print(f"Error: Session {task_id} not found in {session_file}")
+        return
+    
+    try:
+        task_state = TaskState.model_validate_json(session_file.read_text(encoding="utf-8"))
+    except Exception as e:
+        print(f"Error loading session: {e}")
+        return
+        
+    if new_instruction:
+        instruction = f"Resume task. Additional user instruction: {new_instruction}"
+    else:
+        instruction = "Resume the task where it left off. Review previous_steps to see what failed."
+        
+    _setup_and_run(task_state, instruction, config, llm_client, dispatcher, memory, modes)
 
 
 HELP_TEXT = """
 Session commands:
+  /new         Start a new, fresh session
+  /resume <id> [msg] Resume a past blocked task by ID
   /plan        Toggle plan mode (agent shows a plan and waits for approval before acting)
   /supervise   Toggle supervision mode (agent asks confirmation before write/execute actions)
   /status      Show current modes and workspace info
@@ -232,7 +265,7 @@ def main() -> None:
     dispatcher = ToolDispatcher(tools={}, config=config, tracker=tracker)
 
     for tool in (
-        ListFilesTool(),
+        ListFilesTool(config.workspace_path, config.permissions.read.deny),
         ReadFileTool(),
         WriteFileTool(),
         DeleteFileTool(),
@@ -245,6 +278,9 @@ def main() -> None:
 
     memory = ProjectMemory(config.workspace_path / ".agent")
     modes = Modes()
+
+    active_task_id = f"session-{int(time.time())}"
+    active_task_state = TaskState(task_id=active_task_id, original_request="")
 
     print("Agent-Orchestra — multi-agent coding system")
     print(f"Workspace : {config.workspace_path}")
@@ -265,6 +301,41 @@ def main() -> None:
             if task.lower() in ("/exit", "exit", "quit"):
                 print("Bye!")
                 break
+            elif task.lower() in ("/new", "/clear", "/reset"):
+                active_task_id = f"session-{int(time.time())}"
+                active_task_state = TaskState(task_id=active_task_id, original_request="")
+                print("Started a new session.")
+                continue
+            elif task.lower().startswith("/resume"):
+                parts = task.split(" ", 2)
+                if len(parts) < 2:
+                    print("Usage: /resume <task_id> [optional instruction]")
+                    continue
+                task_id = parts[1]
+                instruction = parts[2] if len(parts) > 2 else ""
+                
+                session_file = memory.dir / "sessions" / f"{task_id}.json"
+                if not session_file.exists():
+                    print(f"Error: Session {task_id} not found.")
+                    continue
+                try:
+                    active_task_state = TaskState.model_validate_json(session_file.read_text(encoding="utf-8"))
+                    active_task_id = active_task_state.task_id
+                    print(f"Resumed session {active_task_id}.")
+                except Exception as e:
+                    print(f"Error loading session: {e}")
+                    continue
+                
+                if instruction:
+                    instruction_to_run = f"Resume task. Additional user instruction: {instruction}"
+                else:
+                    instruction_to_run = "Resume the task where it left off. Review previous_steps to see what failed."
+                
+                try:
+                    _setup_and_run(active_task_state, instruction_to_run, config, llm_client, dispatcher, memory, modes)
+                except Exception as e:
+                    print(f"\n[error] {type(e).__name__}: {e}\n")
+                continue
             elif task.lower() == "/plan":
                 state = modes.toggle_plan()
                 print(f"Plan mode {'ON' if state else 'OFF'}.")
@@ -283,7 +354,14 @@ def main() -> None:
                 continue
 
             try:
-                run_task(task, config, llm_client, dispatcher, memory, modes)
+                if not active_task_state.original_request:
+                    active_task_state.original_request = task
+                    instruction_to_run = task
+                else:
+                    active_task_state.original_request += f"\n\nUser follow-up: {task}"
+                    instruction_to_run = f"User follow-up: {task}"
+                    
+                _setup_and_run(active_task_state, instruction_to_run, config, llm_client, dispatcher, memory, modes)
             except Exception as e:
                 print(f"\n[error] {type(e).__name__}: {e}\n")
     finally:
