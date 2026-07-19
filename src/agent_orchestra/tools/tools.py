@@ -16,9 +16,16 @@ from src.agent_orchestra.tools.tool_type import ToolType
 
 PATH_PARAM = {"path": {"type": "string", "description": "Absolute path"}}
 
+_HIDDEN_DIRS = {".agent"}
+
+
 class ListFilesTool(Tool):
     name = "list_files"
-    description = "List files and directories under an absolute path, optionally filtered by a glob pattern."
+    description = (
+        "List files and directories under an absolute path, optionally filtered by a glob pattern. "
+        "Note: the '.agent' directory is intentionally excluded — it is system-internal storage "
+        "and is not part of the user's project."
+    )
     type = ToolType.READ
     permissions = READ_POLICY
     parameters_schema = {
@@ -34,7 +41,10 @@ class ListFilesTool(Tool):
         directory = Path(path)
         if not directory.is_dir():
             return f"Error: not a directory: {path}"
-        entries = sorted(directory.glob(pattern), key=lambda e: (not e.is_dir(), e.name.lower()))
+        entries = sorted(
+            (e for e in directory.glob(pattern) if e.name not in _HIDDEN_DIRS),
+            key=lambda e: (not e.is_dir(), e.name.lower()),
+        )
         if not entries:
             return "(no matches)"
         return "\n".join(f"[{'DIR ' if e.is_dir() else 'FILE'}] {e.name}" for e in entries)
@@ -125,7 +135,11 @@ class EditFileTool(Tool):
 
 class RunCommandTool(Tool):
     name = "run_command"
-    description = "Run a shell command (e.g. npm test, tsc --noEmit, eslint) in a working directory."
+    description = (
+        "Run a shell command (e.g. npm test, tsc --noEmit, eslint) in a working directory. "
+        "For long-running commands such as dev servers (e.g. 'npm run dev'), always pass a "
+        "short timeout (5–10 seconds) to capture startup output without hanging."
+    )
     type = ToolType.EXECUTE
     permissions = EXECUTE_POLICY
     parameters_schema = {
@@ -133,33 +147,51 @@ class RunCommandTool(Tool):
         "properties": {
             "command": {"type": "string", "description": "Command to run"},
             "cwd": {"type": "string", "description": "Absolute path of the working directory"},
-            "timeout": {"type": "integer", "description": "Optional timeout in seconds. Default is 120. Use a small value (e.g. 5 or 10) for long-running commands like dev servers to just capture their startup output."},
+            "timeout": {
+                "type": "integer",
+                "description": (
+                    "Timeout in seconds. Default 120. "
+                    "Use 5–10 for long-running servers (npm run dev, etc.) to just "
+                    "capture their startup output and return immediately."
+                ),
+            },
         },
         "required": ["command", "cwd"],
     }
 
     def execute(self, command: str, cwd: str, timeout: int = 120) -> str:
         try:
-            result = subprocess.run(
-                command, shell=True, cwd=cwd, capture_output=True, text=True,
-                timeout=timeout, encoding="utf-8", errors="replace",
+            proc = subprocess.Popen(
+                command,
+                shell=True,
+                cwd=cwd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
             )
-            parts = []
-            if result.stdout:
-                parts.append(f"stdout:\n{result.stdout.rstrip()}")
-            if result.stderr:
-                parts.append(f"stderr:\n{result.stderr.rstrip()}")
-            parts.append(f"exit code: {result.returncode}")
-            return "\n".join(parts)
-        except subprocess.TimeoutExpired as e:
-            stdout = e.stdout or ""
-            stderr = e.stderr or ""
-            parts = [f"Command timed out after {timeout} seconds. Output so far:"]
-            if stdout:
-                parts.append(f"stdout:\n{stdout.rstrip()}")
-            if stderr:
-                parts.append(f"stderr:\n{stderr.rstrip()}")
-            return "\n".join(parts)
+            try:
+                stdout, stderr = proc.communicate(timeout=timeout)
+                parts = []
+                if stdout:
+                    parts.append(f"stdout:\n{stdout.rstrip()}")
+                if stderr:
+                    parts.append(f"stderr:\n{stderr.rstrip()}")
+                parts.append(f"exit code: {proc.returncode}")
+                return "\n".join(parts)
+            except subprocess.TimeoutExpired:
+                try:
+                    proc.kill()
+                except Exception:
+                    pass
+                stdout, stderr = proc.communicate()
+                parts = [f"Command timed out after {timeout}s (process killed). Startup output:"]
+                if stdout:
+                    parts.append(f"stdout:\n{stdout.rstrip()}")
+                if stderr:
+                    parts.append(f"stderr:\n{stderr.rstrip()}")
+                return "\n".join(parts)
         except Exception as e:
             return f"Error running command: {e}"
 

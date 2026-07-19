@@ -22,9 +22,6 @@ class ToolDispatcher:
         self.tools = tools
         self.config = config
         self.tracker = tracker
-        # The dispatcher no longer knows anything about specific tool kinds:
-        # each tool carries its own permission policy, evaluated against this
-        # shared context.
         self.permission_context = PermissionContext(config)
 
     def register(self, tool: Tool) -> None:

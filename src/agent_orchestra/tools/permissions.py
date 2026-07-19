@@ -1,31 +1,12 @@
-"""Declarative permission policies carried by each tool.
-
-Historically the dispatcher inspected ``tool.type`` and hard-coded which check
-to run for READ/WRITE/EXECUTE tools. That coupled the harness core to the set of
-known tool kinds, so a new plugin could not express its own permission needs
-without editing the dispatcher.
-
-Instead, every tool now declares a list of :class:`PermissionRule` objects
-(``Tool.permissions``). The dispatcher only knows how to iterate those rules and
-call :meth:`PermissionRule.check`; it no longer knows anything about specific
-tools. Plugins ship their own rules — or reuse the presets below.
-"""
-
 from abc import ABC, abstractmethod
 from fnmatch import fnmatch
 from pathlib import Path
 
 
-class PermissionDenied(Exception):
-    """Raised by a permission rule when a call is not allowed."""
+class PermissionDenied(Exception): ...
 
 
 class PermissionContext:
-    """Everything a permission rule may need to evaluate a call.
-
-    Passed to every :meth:`PermissionRule.check`. Wrapping it keeps rules
-    decoupled from the concrete ``AgentConfig`` shape.
-    """
 
     def __init__(self, config):
         self.config = config
@@ -39,19 +20,12 @@ class PermissionContext:
 
 
 class PermissionRule(ABC):
-    """A single permission check. Raise :class:`PermissionDenied` to block."""
 
     @abstractmethod
     def check(self, kwargs: dict, ctx: PermissionContext) -> None: ...
 
 
 class DenyPaths(PermissionRule):
-    """Deny access to a path (from ``kwargs[param]``) matching a deny list.
-
-    The deny patterns are read from the config at check time so live config
-    edits are honoured. ``action`` selects which list (``read`` / ``write``) and
-    only labels the error message.
-    """
 
     def __init__(self, action: str, param: str = "path"):
         self.action = action
@@ -78,7 +52,6 @@ class DenyPaths(PermissionRule):
 
 
 class RequireInsideWorkspace(PermissionRule):
-    """Deny writes to a path outside the configured workspace root."""
 
     def __init__(self, param: str = "path"):
         self.param = param
@@ -97,7 +70,6 @@ class RequireInsideWorkspace(PermissionRule):
 
 
 class CommandPolicy(PermissionRule):
-    """Block denied command substrings; prompt for ones needing approval."""
 
     def __init__(self, param: str = "command"):
         self.param = param
@@ -117,8 +89,6 @@ class CommandPolicy(PermissionRule):
                 break
 
 
-# Presets matching the historical READ/WRITE/EXECUTE behaviour. Tools may reuse
-# these or compose their own list of rules.
 READ_POLICY = [DenyPaths("read")]
 WRITE_POLICY = [RequireInsideWorkspace(), DenyPaths("write")]
 EXECUTE_POLICY = [CommandPolicy()]

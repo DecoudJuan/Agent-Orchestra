@@ -1,14 +1,3 @@
-"""Automatic discovery and registration of tool plugins.
-
-The registry scans one or more Python packages (and optional extra directories),
-finds every concrete :class:`Tool` subclass defined there, filters it against the
-config's enable/disable policy, instantiates it via :meth:`Tool.build`, and
-returns the ready-to-register instances.
-
-Adding a new tool therefore means dropping a module into ``tools/plugins/``
-(or a directory listed in ``tools.plugin_dirs``) — no harness-core edit required.
-"""
-
 import importlib
 import importlib.util
 import inspect
@@ -19,9 +8,6 @@ from pathlib import Path
 from src.agent_orchestra.tools.context import ToolContext
 from src.agent_orchestra.tools.tool import Tool
 
-# Modules/packages always scanned: the builtin tools module + the drop-in
-# plugins package. Both are treated identically — a builtin is just a plugin
-# that ships with the harness.
 BUILTIN_PACKAGES = (
     "src.agent_orchestra.tools.tools",
     "src.agent_orchestra.tools.plugins",
@@ -31,11 +17,9 @@ BUILTIN_PACKAGES = (
 class PluginRegistry:
     def __init__(self, ctx: ToolContext, config=None):
         self.ctx = ctx
-        # ToolsConfig-like object; tolerate absence for minimal configs.
         self.tools_config = getattr(config, "tools", None)
 
     def discover(self, packages: tuple[str, ...] = BUILTIN_PACKAGES) -> list[Tool]:
-        """Return instantiated, enabled tools discovered across all sources."""
         classes: dict[str, type[Tool]] = {}
 
         for package in packages:
@@ -61,7 +45,6 @@ class PluginRegistry:
             instances.append(instance)
         return instances
 
-    # -- discovery internals -------------------------------------------------
 
     def _classes_in_package(self, package_name: str) -> list[type[Tool]]:
         try:
@@ -69,13 +52,12 @@ class PluginRegistry:
         except ModuleNotFoundError:
             return []
         found: list[type[Tool]] = []
-        # Include the package module itself, then any submodules.
         modules = [package]
         if hasattr(package, "__path__"):
             for info in pkgutil.iter_modules(package.__path__, package_name + "."):
                 try:
                     modules.append(importlib.import_module(info.name))
-                except Exception as e:  # a broken plugin must not kill discovery
+                except Exception as e:
                     print(f"  [registry] failed to import {info.name}: {e}")
         for module in modules:
             found.extend(self._tool_classes(module))
@@ -105,7 +87,6 @@ class PluginRegistry:
 
     @staticmethod
     def _tool_classes(module) -> list[type[Tool]]:
-        """Concrete Tool subclasses *defined in* this module (not imported)."""
         result = []
         for _, obj in inspect.getmembers(module, inspect.isclass):
             if (
@@ -124,11 +105,9 @@ class PluginRegistry:
             print(f"  [registry] failed to build {cls.__qualname__}: {e}")
             return None
 
-    # -- enable/disable policy ----------------------------------------------
 
     def _is_enabled(self, tool: Tool) -> bool:
         if not getattr(tool, "enabled", True):
-            # Tool ships disabled; only an explicit allowlist re-enables it.
             enabled = self._config_list("enabled")
             return enabled is not None and tool.name in enabled
         enabled = self._config_list("enabled")

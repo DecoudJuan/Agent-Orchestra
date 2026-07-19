@@ -78,14 +78,14 @@ def build_implementer(dispatcher, config, llm_client, modes=None) -> Agent:
         "Your responsibility is to carefully make code changes based on the findings provided in your input (previous steps and project memory).\n"
         "</role>\n\n"
         "<instructions>\n"
-        "1. Analyze the context and findings provided to you. You cannot read files directly, so rely strictly on this given context and perform precise edits.\n"
-        "2. For small modifications, prefer edit_file (unique find-and-replace).\n"
+        "1. Before writing or editing a file, use read_file to check if it already exists and understand its current content.\n"
+        "2. For small modifications to existing files, prefer edit_file (unique find-and-replace).\n"
         "3. For creating new files, use write_file.\n"
         "4. Ensure every file you modify or create is meticulously tracked and listed in files_touched.\n"
         "</instructions>"
     )
     return _build_subagent(
-        "implementer", prompt, ["write_file", "delete_file", "edit_file"], dispatcher, config, llm_client, modes
+        "implementer", prompt, ["read_file", "write_file", "delete_file", "edit_file"], dispatcher, config, llm_client, modes
     )
 
 
@@ -353,7 +353,10 @@ def main() -> None:
             except Exception as e:
                 print(f"\n[error] {type(e).__name__}: {e}\n")
     finally:
-        flush_traces()
+        try:
+            flush_traces()
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":
