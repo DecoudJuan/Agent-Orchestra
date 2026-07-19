@@ -265,7 +265,7 @@ def main() -> None:
     dispatcher = ToolDispatcher(tools={}, config=config, tracker=tracker)
 
     for tool in (
-        ListFilesTool(config.workspace_path, config.permissions.read.deny),
+        ListFilesTool(),
         ReadFileTool(),
         WriteFileTool(),
         DeleteFileTool(),
