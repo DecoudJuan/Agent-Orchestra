@@ -143,3 +143,38 @@ Allow this action? [y]es / [n]o:
 ```
 
 Actions always allowed (no prompt): `read_file`, `list_files`, `rag_search`, `web_search`
+
+---
+
+## Adding Custom Tools (Plugins)
+
+Agent-Orchestra supports a plugin system that automatically discovers and registers new tools. You can add new capabilities without modifying the core system.
+
+To add a new tool:
+1. Create a new `.py` file inside the `src/agent_orchestra/tools/plugins/` directory (or any custom directory specified in your `agent.config.yaml` under `plugin_dirs`).
+2. Define a class that inherits from `Tool`.
+3. Implement the required properties (`name`, `description`, `type`, `parameters_schema`) and the `execute` method.
+
+Example:
+
+```python
+from src.agent_orchestra.tools.tool import Tool
+from src.agent_orchestra.tools.tool_type import ToolType
+
+class MyCustomTool(Tool):
+    name = "say_hello"
+    description = "A simple tool that says hello to a given name."
+    type = ToolType.READ
+    parameters_schema = {
+        "type": "object",
+        "properties": {
+            "name": {"type": "string", "description": "The name to greet."}
+        },
+        "required": ["name"]
+    }
+
+    def execute(self, name: str) -> str:
+        return f"Hello, {name}!"
+```
+
+The system will automatically discover your file on startup, register the tool, and make it available to the agents based on their configuration.

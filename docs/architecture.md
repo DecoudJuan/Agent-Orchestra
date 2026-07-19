@@ -125,3 +125,14 @@ Puedes usar el sistema de tres formas:
 - **Modo Normal**: El Orquestador hace todo el trabajo de forma automática de principio a fin.
 - **Modo Plan**: El Orquestador hace una lista de los pasos que va a seguir y te pregunta si estás de acuerdo antes de empezar a trabajar.
 - **Modo Supervisión**: El sistema hace pausas y te pide permiso cada vez que va a modificar un archivo o ejecutar un comando en la terminal. Ideal para cambios delicados.
+
+---
+
+## 10. Sistema de Plugins (Descubrimiento Automático)
+
+El sistema carga las herramientas de forma dinámica, lo que evita que estén atadas (acopladas) al código principal. Así es como funciona por dentro:
+
+1. **Búsqueda automática**: Al arrancar, el sistema explora carpetas específicas del proyecto buscando archivos de código.
+2. **Detección**: Dentro de esos archivos, el sistema inspecciona el código buscando cualquier clase que esté implementando la interfaz `Tool`.
+3. **Filtro e inicialización**: Construye las herramientas que encontró, revisa la configuración para saber si están habilitadas y se asegura de que no haya nombres repetidos.
+4. **Registro**: Finalmente, entrega la lista de herramientas válidas al Despachador.
