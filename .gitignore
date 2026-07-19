@@ -2,3 +2,8 @@
 __pycache__/
 *.pyc
 *.pyo
+traces/
+rag/index/
+.agent/
+project/
+agent.config.yaml
