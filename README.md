@@ -12,10 +12,14 @@ src/agent_orchestra/
 ├── modes.py           Runtime flags — plan_mode and supervision_mode
 ├── config.py          Configuration loading (agent.config.yaml)
 ├── tools/
-│   ├── tools.py       All tool implementations
-│   ├── dispatcher.py  Tool dispatch, permission checks, loop detection
-│   ├── tool.py        Tool base class
-│   └── tool_type.py   ToolType enum (READ, WRITE, EXECUTE, SEARCH, DELEGATE)
+│   ├── tools.py       Builtin tool implementations
+│   ├── dispatcher.py  Tool dispatch, permission enforcement, loop detection
+│   ├── tool.py        Tool base class (common plugin interface)
+│   ├── tool_type.py   ToolType enum (READ, WRITE, EXECUTE, SEARCH, DELEGATE)
+│   ├── permissions.py Declarative permission policies carried by each tool
+│   ├── context.py     ToolContext — dependencies injected at build time
+│   ├── registry.py    Plugin discovery + automatic registration
+│   └── plugins/       Drop-in directory: add a module here to add a tool
 ├── memory/            Project memory (persistent JSON) + task state
 ├── rag/               RAG index builder and search tool
 └── observability/     Tracing / Langfuse integration
@@ -50,6 +54,71 @@ Typical flow: **explore → (research) → implement → test → review**. The 
 | `run_command` | EXECUTE | Runs a shell command and returns stdout/stderr |
 | `rag_search` | SEARCH | Searches the local RAG index |
 | `web_search` | SEARCH | Searches the web via Tavily API |
+
+---
+
+## Plugin system for tools
+
+New tools can be added **without modifying the harness core**. Every tool —
+builtin or third-party — implements the same interface and is discovered and
+registered automatically at startup.
+
+### Common tool interface
+
+Each tool is a `Tool` subclass declaring:
+
+| Member | Purpose |
+|---|---|
+| `name` | Identifier the LLM calls |
+| `description` | What the tool does (shown to the LLM) |
+| `parameters_schema` | JSON schema of its arguments |
+| `type` | Category (`READ` / `WRITE` / `EXECUTE` / `SEARCH` / `DELEGATE`) |
+| `permissions` | List of permission rules the tool enforces (see below) |
+| `execute(**kwargs)` | The execution function |
+| `build(ctx)` | *(optional)* factory; override when the tool needs dependencies |
+
+Permission policy lives **on the tool**, not in the dispatcher. Reuse the presets
+(`READ_POLICY`, `WRITE_POLICY`, `EXECUTE_POLICY`) or compose rules
+(`DenyPaths`, `RequireInsideWorkspace`, `CommandPolicy`) — or write your own
+`PermissionRule`. The dispatcher just iterates `tool.permissions`; it knows
+nothing about any specific tool.
+
+### Adding a tool
+
+Drop a module into `src/agent_orchestra/tools/plugins/` (or any directory listed
+in `tools.plugin_dirs`) that defines a `Tool` subclass:
+
+```python
+from src.agent_orchestra.tools.permissions import READ_POLICY
+from src.agent_orchestra.tools.tool import Tool
+from src.agent_orchestra.tools.tool_type import ToolType
+
+class MyTool(Tool):
+    name = "my_tool"
+    description = "What it does."
+    type = ToolType.READ
+    permissions = READ_POLICY
+    parameters_schema = {"type": "object", "properties": {...}, "required": [...]}
+
+    def execute(self, **kwargs) -> str:
+        ...
+```
+
+The `PluginRegistry` scans the builtin module and the `plugins/` package at
+startup, builds each enabled tool via `build(ctx)`, and registers it. See
+`tools/plugins/find_in_files.py` for a complete example. To let an agent use a
+tool, add its `name` to that agent's `allowed_tools` in `main.py`.
+
+### Enabling / disabling tools
+
+Configured under `tools:` in `agent.config.yaml`:
+
+```yaml
+tools:
+  enabled: []          # allowlist of tool names (omit = all discovered tools)
+  disabled: []         # tool names to skip
+  plugin_dirs: []      # extra directories scanned for plugin modules
+```
 
 ---
 
