@@ -1,3 +1,10 @@
+# Demo 2: Diagnóstico y resolución de un error 404
+
+## Contexto del Caso de Uso
+En este demo se prueba la capacidad del agente para diagnosticar y solucionar un problema existente. Se generó intencionalmente un error en la aplicación moviendo el archivo `index.html` desde la raíz del proyecto al directorio `public/`, lo que causa un error 404 al intentar servir la app con Vite. El agente debe descubrir la causa, arreglarla y generar un reporte en formato Markdown explicando la solución.
+
+## Output de la Consola
+```text
 julir@DESKTOP-63GD1C7 MINGW64 ~/faculty/ia/Agent-Orchestra (main)
 $ python -m src.agent_orchestra.main
 Tools     : delete_file, edit_file, find_in_files, list_files, rag_search, read_file, run_command, web_search, write_file
@@ -141,3 +148,18 @@ Sources:
   - web:https://virangaj.medium.com/solving-404-errors-on-refresh-in-react-vite-apps-c52fc596dc27
 Session saved: .agent/sessions/session-1784510290.json
 ============================================================
+```
+
+## Análisis de la Ejecución
+
+### Qué funcionó bien
+- **Diagnóstico acertado:** El agente identificó correctamente que Vite requiere que `index.html` esté en la raíz del proyecto y no en la carpeta `public/`.
+- **Resolución autónoma:** Utilizó comandos de consola (`dir`, `type`, `move`) para explorar el sistema de archivos, mover el archivo al lugar correcto y luego verificar que el build funcionara.
+- **Generación del reporte:** Logró crear el archivo `404-diagnosis-report.md` con un resumen claro del problema y la solución, tal como se solicitó.
+
+### Qué funcionó mal
+- **Redundancia en la revisión:** El orquestador llamó repetidamente al paso 9 (revisor), y el revisor leyó el mismo archivo de reporte múltiples veces antes de darlo por válido.
+
+### Qué se podría mejorar
+- **Enforcement de límites de rol:** El tester usó `move public\index.html .` para mover el archivo, lo cual es una mutación de archivos que debería ser responsabilidad del implementer. El sistema de permisos de comandos debería detectar comandos que mutan archivos (`move`, `del`, `cp`) y aplicar las políticas de escritura.
+- **Idempotencia en invocaciones:** El paso 9 (reviewer) fue invocado 4+ veces de forma redundante, desperdiciando llamadas al LLM. El orquestador debería deduplicar invocaciones repetidas al mismo sub-agente con la misma instrucción.

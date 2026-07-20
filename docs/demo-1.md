@@ -1,3 +1,10 @@
+# Demo 1: Crear una web app básica desde 0
+
+## Contexto del Caso de Uso
+En este demo se prueba la capacidad del agente para planificar e implementar una aplicación web en React desde cero. El usuario solicita una web app básica para un blog de libros, y luego modifica el plan pidiendo que se investiguen tendencias de UI/UX modernas. El agente debe coordinar múltiples sub-agentes (orquestador, investigador, implementador, tester, revisor) para lograr el objetivo.
+
+## Output de la Consola
+```text
 julir@DESKTOP-63GD1C7 MINGW64 ~/faculty/ia/Agent-Orchestra (main)
 $ python -m src.agent_orchestra.main
 WARNING: workspace does not exist yet: C:\Users\julir\faculty\ia\Agent-Orchestra\my-project
@@ -222,3 +229,18 @@ Sources:
   - web:https://www.wearetenet.com/blog/ui-ux-design-trends
 Session saved: .agent/sessions/session-1784509593.json
 ============================================================
+```
+
+## Análisis de la Ejecución
+
+### Qué funcionó bien
+- **Coordinación de agentes:** El orquestador logró delegar tareas exitosamente a los agentes de investigación, implementación, pruebas y revisión.
+- **Planificación adaptable:** El sistema pudo modificar su plan inicial al recibir feedback del usuario sobre investigar tendencias UI/UX.
+- **Ejecución de código y comandos:** El implementador escribió correctamente los archivos necesarios para inicializar un proyecto Vite + React + TS, y el tester ejecutó comandos como `npm install` y `npm run dev` de manera correcta.
+
+### Qué funcionó mal
+- **Manejo de permisos denegados:** En el paso 5, el usuario denegó el permiso para instalar las dependencias de Tailwind, pero el agente continuó creando los archivos de configuración (`tailwind.config.js`) asumiendo que estaban instaladas, lo que puede romper el proyecto.
+
+### Qué se podría mejorar
+- **Re-planificación ante fallos:** El orquestador debería detenerse y revisar el plan cuando un paso crítico falla, en vez de seguir ejecutando pasos que dependen del paso fallido.
+- **Actualizaciones de memoria fallidas:** Múltiples propuestas de memoria fueron descartadas silenciosamente (`Ignored 'conventions' update: expected an object, got NoneType`). El sistema debería validar y corregir estos updates en vez de descartarlos.
