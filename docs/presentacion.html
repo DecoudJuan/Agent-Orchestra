@@ -1,0 +1,819 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Agent-Orchestra — Trabajo Práctico</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #070a14;
+    --surface: #0e1322;
+    --surface-2: #131a30;
+    --line: #1e2745;
+    --text: #e8ecf8;
+    --muted: #8a93b2;
+    --violet: #8b5cf6;
+    --cyan: #38d6f5;
+    --green: #4ade9c;
+    --amber: #f5b14c;
+    --grad: linear-gradient(90deg, var(--violet), var(--cyan));
+    --radius: 14px;
+    --font-display: "Space Grotesk", system-ui, sans-serif;
+    --font-body: "Inter", system-ui, sans-serif;
+    --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html, body { height: 100%; overflow: hidden; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-body);
+    font-size: 16px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  ::selection { background: rgba(139, 92, 246, .4); }
+
+  button:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+
+  /* ---------- Deck ---------- */
+  .deck { position: fixed; inset: 0; }
+
+  .deck-glow {
+    position: absolute; inset: 0; pointer-events: none; z-index: 0;
+    background:
+      radial-gradient(700px 340px at 15% 8%, rgba(139, 92, 246, .13), transparent 70%),
+      radial-gradient(800px 420px at 88% 95%, rgba(56, 214, 245, .10), transparent 70%);
+  }
+
+  .slide {
+    position: absolute; inset: 0; z-index: 1;
+    display: flex; align-items: center; justify-content: center;
+    padding: 56px 68px 88px;
+    opacity: 0; visibility: hidden;
+    transform: translateX(46px);
+    transition: opacity .45s ease, transform .45s ease, visibility 0s linear .45s;
+  }
+  .slide.active {
+    opacity: 1; visibility: visible; transform: none;
+    transition: opacity .45s ease, transform .45s ease;
+  }
+  .slide.before { transform: translateX(-46px); }
+
+  .slide-inner { width: 100%; max-width: 1120px; max-height: 100%; overflow-y: auto; }
+
+  /* ---------- HUD ---------- */
+  .progress {
+    position: fixed; top: 0; left: 0; height: 3px; width: 0%;
+    background: var(--grad); z-index: 20; transition: width .35s ease;
+  }
+  .hud {
+    position: fixed; bottom: 0; left: 0; right: 0; z-index: 20;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 28px;
+  }
+  .hud .deck-name {
+    font-family: var(--font-mono); font-size: .72rem; color: var(--muted);
+    letter-spacing: .08em; text-transform: uppercase;
+  }
+  .hud .controls { display: flex; align-items: center; gap: 14px; }
+  .hud .counter { font-family: var(--font-mono); font-size: .78rem; color: var(--muted); min-width: 62px; text-align: center; }
+  .hud button {
+    width: 38px; height: 38px; border-radius: 10px; cursor: pointer;
+    background: var(--surface-2); border: 1px solid var(--line); color: var(--text);
+    font-size: 1rem; line-height: 1;
+    transition: background .2s, border-color .2s;
+  }
+  .hud button:hover { background: var(--line); border-color: #2c3760; }
+  .hud .hint {
+    font-family: var(--font-mono); font-size: .68rem; color: #566083;
+  }
+
+  /* ---------- Typography ---------- */
+  .eyebrow {
+    font-family: var(--font-mono); font-size: .76rem; letter-spacing: .14em;
+    text-transform: uppercase; color: var(--cyan); margin-bottom: 16px;
+  }
+  .eyebrow .sep { color: #566083; margin: 0 8px; }
+  h1 {
+    font-family: var(--font-display); font-size: clamp(2.2rem, 4.6vw, 3.4rem);
+    font-weight: 700; line-height: 1.08; letter-spacing: -.02em; margin-bottom: 20px;
+  }
+  h2 {
+    font-family: var(--font-display); font-size: clamp(1.6rem, 3vw, 2.2rem);
+    font-weight: 700; letter-spacing: -.015em; margin-bottom: 14px;
+  }
+  h3 { font-family: var(--font-display); font-size: 1.05rem; font-weight: 600; margin-bottom: 8px; }
+  .grad {
+    background: var(--grad);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .lede { color: var(--muted); font-size: 1.02rem; max-width: 62ch; }
+  .lede strong, .card p strong, .verdict li strong, .mem-item p strong { color: var(--text); }
+
+  code.inline {
+    font-family: var(--font-mono); font-size: .85em;
+    background: var(--surface-2); border: 1px solid var(--line);
+    padding: 1px 6px; border-radius: 6px; color: var(--cyan);
+  }
+
+  /* ---------- Components ---------- */
+  .grid { display: grid; gap: 14px; }
+  .grid-2 { grid-template-columns: 1fr 1fr; }
+  .grid-3 { grid-template-columns: repeat(3, 1fr); }
+
+  .card {
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: var(--radius); padding: 20px 22px;
+  }
+  .card p { color: var(--muted); font-size: .88rem; }
+
+  .role-card { position: relative; }
+  .role-card::before {
+    content: ""; position: absolute; top: 0; left: 22px; right: 22px; height: 2px;
+    background: var(--grad); border-radius: 2px; opacity: .7;
+  }
+  .role-tag {
+    font-family: var(--font-mono); font-size: .68rem; color: var(--cyan);
+    margin-top: 10px; display: block;
+  }
+  .card-num {
+    font-family: var(--font-mono); font-size: .8rem; font-weight: 500;
+    background: var(--grad); -webkit-background-clip: text; background-clip: text; color: transparent;
+    display: block; margin-bottom: 8px;
+  }
+
+  .mem-list { display: grid; gap: 12px; }
+  .mem-item {
+    display: grid; grid-template-columns: 46px 1fr; gap: 16px; align-items: start;
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: var(--radius); padding: 18px 22px;
+  }
+  .mem-num {
+    font-family: var(--font-mono); font-size: 1.2rem; font-weight: 500; line-height: 1.3;
+    background: var(--grad); -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .mem-item p { color: var(--muted); font-size: .9rem; }
+
+  .tags { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 24px; }
+  .tag {
+    font-family: var(--font-mono); font-size: .74rem; color: var(--text);
+    background: var(--surface-2); border: 1px solid var(--line);
+    padding: 5px 12px; border-radius: 999px;
+  }
+
+  .chip {
+    display: inline-block; font-family: var(--font-mono); font-size: .72rem;
+    border: 1px solid var(--line); border-radius: 999px; padding: 4px 12px;
+    color: var(--muted); margin-bottom: 14px;
+  }
+  .chip b { color: var(--cyan); font-weight: 500; }
+
+  /* Console */
+  .console {
+    background: #05070f; border: 1px solid var(--line); border-radius: var(--radius);
+    overflow: hidden; margin-top: 22px;
+  }
+  .console-bar {
+    display: flex; align-items: center; gap: 8px;
+    padding: 9px 16px; border-bottom: 1px solid var(--line); background: var(--surface);
+  }
+  .console-bar .dot { width: 9px; height: 9px; border-radius: 50%; }
+  .console-bar .title { font-family: var(--font-mono); font-size: .7rem; color: var(--muted); margin-left: 8px; }
+  .console pre {
+    padding: 18px 20px; overflow-x: auto;
+    font-family: var(--font-mono); font-size: .74rem; line-height: 1.7; color: #b9c2de;
+  }
+  .c-user { color: var(--cyan); }
+  .c-orch { color: var(--violet); }
+  .c-agent { color: var(--green); }
+  .c-warn { color: var(--amber); }
+  .c-dim { color: #566083; }
+
+  /* Flow */
+  .flow { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 20px; }
+  .flow .step {
+    font-family: var(--font-mono); font-size: .74rem;
+    background: var(--surface-2); border: 1px solid var(--line);
+    padding: 6px 12px; border-radius: 999px; color: var(--text);
+  }
+  .flow .step b { color: var(--cyan); font-weight: 500; }
+  .flow .arr { color: var(--muted); font-size: .8rem; }
+
+  /* Verdicts */
+  .verdict { border-radius: var(--radius); border: 1px solid var(--line); background: var(--surface); padding: 22px; }
+  .verdict h4 {
+    font-family: var(--font-display); font-size: .92rem; font-weight: 600; margin-bottom: 12px;
+  }
+  .verdict ul { list-style: none; display: grid; gap: 9px; }
+  .verdict li { color: var(--muted); font-size: .88rem; padding-left: 16px; position: relative; }
+  .verdict li::before { content: "—"; position: absolute; left: 0; font-size: .7rem; top: .35em; }
+  .verdict.good h4 { color: var(--green); }
+  .verdict.good li::before { color: var(--green); }
+  .verdict.bad h4 { color: var(--amber); }
+  .verdict.bad li::before { color: var(--amber); }
+
+  /* Screenshot placeholders */
+  .shot {
+    border: 2px dashed #2c3760; border-radius: var(--radius);
+    background: repeating-linear-gradient(-45deg, rgba(139,92,246,.03), rgba(139,92,246,.03) 12px, transparent 12px, transparent 24px), var(--surface);
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 8px;
+    text-align: center; padding: 32px 24px;
+  }
+  .shot .shot-title { font-family: var(--font-display); font-weight: 600; font-size: 1rem; }
+  .shot .shot-hint { font-family: var(--font-mono); font-size: .72rem; color: var(--muted); max-width: 52ch; }
+  .shot img { max-width: 100%; max-height: 100%; border-radius: 8px; }
+  .shot.filled {
+    border: 1px solid var(--line); background: var(--surface);
+    padding: 12px; gap: 10px;
+  }
+  .shot.filled img { object-fit: contain; min-height: 0; }
+  .shot.filled .shot-cap { font-family: var(--font-mono); font-size: .7rem; color: var(--muted); }
+
+  /* Diagram */
+  .diagram { width: 100%; height: auto; display: block; }
+  .diagram .node-box { fill: var(--surface-2); stroke: var(--line); }
+  .diagram .node-label { font-family: var(--font-mono); font-size: 12.5px; fill: var(--text); }
+  .diagram .node-sub { font-family: var(--font-mono); font-size: 9.5px; fill: var(--muted); }
+  .diagram .wire { stroke: var(--line); stroke-width: 1.5; fill: none; }
+  .diagram .pulse {
+    stroke: url(#wiregrad); stroke-width: 1.5; fill: none;
+    stroke-dasharray: 10 130;
+    animation: flow 3.2s linear infinite;
+  }
+  @keyframes flow { to { stroke-dashoffset: -140; } }
+  .diagram .orch-box { fill: rgba(139, 92, 246, .12); stroke: var(--violet); stroke-width: 1.5; }
+  .caption {
+    font-family: var(--font-mono); font-size: .7rem; color: var(--muted);
+    text-align: center; margin-top: 10px;
+  }
+
+  .two-col { display: grid; grid-template-columns: 1.05fr .95fr; gap: 48px; align-items: center; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .diagram .pulse { animation: none; }
+    .slide, .progress { transition: none; }
+  }
+
+  @media (max-width: 900px) {
+    html, body { overflow: auto; }
+    .slide { position: static; opacity: 1; visibility: visible; transform: none; padding: 40px 20px; min-height: auto; }
+    .deck { position: static; }
+    .hud, .progress { display: none; }
+    .two-col, .grid-2, .grid-3 { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<div class="deck" id="deck">
+  <div class="deck-glow"></div>
+
+  <!-- ============ SLIDE 1 · Portada ============ -->
+  <section class="slide">
+    <div class="slide-inner">
+      <div class="two-col">
+        <div>
+          <p class="eyebrow">Trabajo Práctico<span class="sep">·</span>Sistemas Multi-Agente</p>
+          <h1>Agent-<span class="grad">Orchestra</span></h1>
+          <p class="lede">
+            Sistema multi-agente de asistencia a la programación: un orquestador central
+            coordina cinco subagentes especializados para resolver tareas de código sobre
+            proyectos React + TypeScript + Vite.
+          </p>
+          <div class="tags">
+            <span class="tag">Python</span>
+            <span class="tag">OpenAI · gpt-4.1</span>
+            <span class="tag">RAG · ChromaDB</span>
+            <span class="tag">Langfuse</span>
+          </div>
+        </div>
+        <div>
+          <svg class="diagram" viewBox="0 0 520 360" role="img" aria-label="Diagrama: el usuario habla con el orquestador, que coordina cinco subagentes">
+            <defs>
+              <linearGradient id="wiregrad" x1="0" y1="0" x2="1" y2="0">
+                <stop offset="0" stop-color="#8b5cf6"/>
+                <stop offset="1" stop-color="#38d6f5"/>
+              </linearGradient>
+            </defs>
+            <rect class="node-box" x="10" y="150" width="106" height="56" rx="10"/>
+            <text class="node-label" x="63" y="174" text-anchor="middle">Usuario</text>
+            <text class="node-sub" x="63" y="192" text-anchor="middle">Task&gt;</text>
+            <rect class="orch-box" x="176" y="140" width="140" height="76" rx="12"/>
+            <text class="node-label" x="246" y="172" text-anchor="middle">Orquestador</text>
+            <text class="node-sub" x="246" y="192" text-anchor="middle">planifica · delega</text>
+            <path class="wire" d="M116 178 H176"/>
+            <path class="pulse" d="M116 178 H176"/>
+            <g>
+              <rect class="node-box" x="386" y="16"  width="124" height="48" rx="10"/>
+              <text class="node-label" x="448" y="38" text-anchor="middle">Explorador</text>
+              <text class="node-sub" x="448" y="53" text-anchor="middle">lee el proyecto</text>
+              <rect class="node-box" x="386" y="86"  width="124" height="48" rx="10"/>
+              <text class="node-label" x="448" y="108" text-anchor="middle">Investigador</text>
+              <text class="node-sub" x="448" y="123" text-anchor="middle">RAG + web</text>
+              <rect class="node-box" x="386" y="156" width="124" height="48" rx="10"/>
+              <text class="node-label" x="448" y="178" text-anchor="middle">Implementador</text>
+              <text class="node-sub" x="448" y="193" text-anchor="middle">escribe código</text>
+              <rect class="node-box" x="386" y="226" width="124" height="48" rx="10"/>
+              <text class="node-label" x="448" y="248" text-anchor="middle">Testeador</text>
+              <text class="node-sub" x="448" y="263" text-anchor="middle">ejecuta comandos</text>
+              <rect class="node-box" x="386" y="296" width="124" height="48" rx="10"/>
+              <text class="node-label" x="448" y="318" text-anchor="middle">Revisor</text>
+              <text class="node-sub" x="448" y="333" text-anchor="middle">valida el resultado</text>
+            </g>
+            <path class="wire" d="M316 160 C 356 140, 346 40, 386 40"/>
+            <path class="wire" d="M316 170 C 352 160, 350 110, 386 110"/>
+            <path class="wire" d="M316 180 H386"/>
+            <path class="wire" d="M316 190 C 352 200, 350 250, 386 250"/>
+            <path class="wire" d="M316 200 C 356 220, 346 320, 386 320"/>
+            <path class="pulse" style="animation-delay:0s"   d="M316 160 C 356 140, 346 40, 386 40"/>
+            <path class="pulse" style="animation-delay:.6s"  d="M316 170 C 352 160, 350 110, 386 110"/>
+            <path class="pulse" style="animation-delay:1.2s" d="M316 180 H386"/>
+            <path class="pulse" style="animation-delay:1.8s" d="M316 190 C 352 200, 350 250, 386 250"/>
+            <path class="pulse" style="animation-delay:2.4s" d="M316 200 C 356 220, 346 320, 386 320"/>
+          </svg>
+          <p class="caption">Patrón Orchestrator-Workers: un solo nivel de delegación.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ SLIDE 2 · Objetivo ============ -->
+  <section class="slide">
+    <div class="slide-inner">
+      <p class="eyebrow">Objetivo del trabajo</p>
+      <h2>Qué se construyó y qué se evalúa</h2>
+      <p class="lede" style="margin-bottom:28px">
+        El objetivo es dividir tareas complejas de programación en pasos simples que agentes
+        especializados resuelven de forma coordinada, segura y trazable, evitando que los
+        agentes se llamen entre sí sin control.
+      </p>
+      <div class="grid grid-3">
+        <div class="card">
+          <span class="card-num">A</span>
+          <h3>Arquitectura</h3>
+          <p>Diseño Orchestrator-Workers con roles definidos, memoria en tres niveles, RAG sobre documentación oficial y una capa de seguridad que media todos los usos de herramientas.</p>
+        </div>
+        <div class="card">
+          <span class="card-num">B</span>
+          <h3>Dos casos de uso</h3>
+          <p>Demo 1: construir una web app desde cero con re-planificación en caliente. Demo 2: diagnosticar y resolver de forma autónoma un error 404 plantado a propósito.</p>
+        </div>
+        <div class="card">
+          <span class="card-num">C</span>
+          <h3>Observabilidad</h3>
+          <p>Trazabilidad completa de cada ejecución con Langfuse: spans por agente, llamadas al LLM con tokens y costo, retrieval del RAG y errores marcados en la traza.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ SLIDE 3 · Patrón ============ -->
+  <section class="slide">
+    <div class="slide-inner">
+      <p class="eyebrow">Arquitectura<span class="sep">·</span>1 / 5</p>
+      <h2>Patrón Orchestrator-Workers</h2>
+      <p class="lede" style="margin-bottom:28px">
+        Un agente central recibe la tarea, la divide en pasos y delega cada uno en un subagente
+        especializado. La relación tiene <strong>un solo nivel</strong>: ningún subagente puede
+        darle trabajo a otro. Para el Orquestador, invocar un subagente es igual que usar
+        cualquier otra herramienta: da una orden y recibe un resultado.
+      </p>
+      <div class="grid grid-2">
+        <div class="card">
+          <h3>Flujo predecible y auditable</h3>
+          <p>Cada paso sale del Orquestador, por lo que el flujo de trabajo completo se puede seguir y revisar. El Orquestador decide <strong>qué</strong> hacer; los subagentes resuelven <strong>cómo</strong>. No modifica archivos ni ejecuta comandos por su cuenta.</p>
+        </div>
+        <div class="card">
+          <h3>Sin ciclos infinitos</h3>
+          <p>Al eliminar las llamadas entre agentes se evita el riesgo de ciclos o delegaciones confusas, un problema común en sistemas donde los agentes se invocan libremente. Ante un fallo, el Orquestador reformula la orden o cambia de subagente antes de rendirse.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ SLIDE 4 · Roles ============ -->
+  <section class="slide">
+    <div class="slide-inner">
+      <p class="eyebrow">Arquitectura<span class="sep">·</span>2 / 5</p>
+      <h2>Roles: cinco subagentes y un guardia</h2>
+      <div class="grid grid-3" style="margin-top:24px">
+        <div class="card role-card">
+          <h3>Explorador</h3>
+          <p>Entiende cómo está organizado el proyecto: lee carpetas y archivos clave, y guarda lo útil en la memoria del proyecto.</p>
+          <span class="role-tag">read_file · list_files · find_in_files</span>
+        </div>
+        <div class="card role-card">
+          <h3>Investigador</h3>
+          <p>Busca información técnica: primero en la documentación indexada (RAG) y luego en la web. Siempre cita sus fuentes.</p>
+          <span class="role-tag">rag_search · web_search</span>
+        </div>
+        <div class="card role-card">
+          <h3>Implementador</h3>
+          <p>El único que modifica código. Lee antes de escribir para no pisar nada y reporta exactamente qué cambió.</p>
+          <span class="role-tag">write_file · edit_file · delete_file</span>
+        </div>
+        <div class="card role-card">
+          <h3>Testeador</h3>
+          <p>Ejecuta tests, linters y servidores en la terminal. Si algo falla, muestra los mensajes exactos del error.</p>
+          <span class="role-tag">run_command</span>
+        </div>
+        <div class="card role-card">
+          <h3>Revisor</h3>
+          <p>Contrasta los archivos modificados con el pedido original del usuario: aprueba o señala qué falta corregir.</p>
+          <span class="role-tag">read_file · list_files</span>
+        </div>
+        <div class="card role-card">
+          <h3>El Despachador</h3>
+          <p>No es un agente: media cada uso de herramienta. Valida permisos por rol, frena comandos peligrosos, detecta bucles y registra todo.</p>
+          <span class="role-tag">permisos · monitoreo · anti-loops</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ SLIDE 5 · Memoria ============ -->
+  <section class="slide">
+    <div class="slide-inner">
+      <p class="eyebrow">Arquitectura<span class="sep">·</span>3 / 5</p>
+      <h2>Memoria y estado en tres niveles</h2>
+      <div class="mem-list" style="margin-top:24px">
+        <div class="mem-item">
+          <span class="mem-num">1</span>
+          <p><strong>Corto plazo — contexto del agente.</strong> Vive solo durante el turno de cada agente y se descarta al terminar. Permite que el agente razone sin ensuciar la memoria global.</p>
+        </div>
+        <div class="mem-item">
+          <span class="mem-num">2</span>
+          <p><strong>Estado de la tarea.</strong> El Orquestador registra paso a paso qué se pidió, qué hizo cada agente y qué archivos cambiaron. Se persiste en archivo: una sesión interrumpida se retoma con <code class="inline">/resume &lt;task_id&gt;</code>.</p>
+        </div>
+        <div class="mem-item">
+          <span class="mem-num">3</span>
+          <p><strong>Memoria del proyecto.</strong> Sobrevive entre tareas: arquitectura, convenciones de código, dependencias, comandos útiles y decisiones pasadas. Cada agente recibe únicamente la porción que su rol necesita.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ SLIDE 6 · RAG / errores / plugins ============ -->
+  <section class="slide">
+    <div class="slide-inner">
+      <p class="eyebrow">Arquitectura<span class="sep">·</span>4 / 5</p>
+      <h2>RAG, manejo de errores y plugins</h2>
+      <div class="grid grid-3" style="margin-top:24px">
+        <div class="card">
+          <h3>RAG local</h3>
+          <p>La documentación oficial de React, TypeScript y Vite se divide en chunks por títulos, se vectoriza con <code class="inline">text-embedding-3-small</code> y se indexa en ChromaDB. El Investigador busca por significado, no por palabras exactas.</p>
+        </div>
+        <div class="card">
+          <h3>Manejo de errores</h3>
+          <p>Regla central: <strong>no inventar</strong>. Si un agente no tiene la información, se declara bloqueado. Cada agente tiene un tope de 20 iteraciones por turno; el Orquestador reintenta con otra estrategia antes de escalar al usuario.</p>
+        </div>
+        <div class="card">
+          <h3>Plugins auto-descubiertos</h3>
+          <p>Al arrancar, el sistema escanea directorios, detecta clases que implementan la interfaz <code class="inline">Tool</code>, valida configuración y nombres, y las registra en el Despachador. Herramientas nuevas sin tocar el núcleo.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ SLIDE 7 · Modos y seguridad ============ -->
+  <section class="slide">
+    <div class="slide-inner">
+      <p class="eyebrow">Arquitectura<span class="sep">·</span>5 / 5</p>
+      <h2>Modos de uso y seguridad</h2>
+      <div class="grid grid-2" style="margin-top:24px">
+        <div class="card">
+          <h3>Tres modos de operación</h3>
+          <p style="margin-top:6px">
+            <strong>Normal</strong> — el Orquestador ejecuta de principio a fin.<br><br>
+            <strong>Plan</strong> (<code class="inline">/plan</code>) — propone un plan numerado y espera aprobación o modificaciones antes de tocar nada.<br><br>
+            <strong>Supervisión</strong> (<code class="inline">/supervise</code>) — pide confirmación antes de cada escritura o comando.
+          </p>
+        </div>
+        <div class="card">
+          <h3>Permisos declarativos</h3>
+          <p style="margin-top:6px">
+            Definidos en <code class="inline">agent.config.yaml</code>:<br><br>
+            — Rutas de lectura/escritura denegadas: <code class="inline">.env</code>, <code class="inline">.git/**</code>, <code class="inline">node_modules/**</code><br><br>
+            — Comandos prohibidos: <code class="inline">rm -rf</code>, <code class="inline">git push</code><br><br>
+            — Comandos con aprobación explícita: <code class="inline">npm install</code>, <code class="inline">git commit</code>
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ SLIDE 8 · Caso 1: contexto ============ -->
+  <section class="slide">
+    <div class="slide-inner">
+      <p class="eyebrow">Caso de uso 1<span class="sep">·</span>Contexto</p>
+      <h2>Crear una web app desde cero</h2>
+      <span class="chip">Modo <b>/plan</b> · gpt-4.1 · workspace vacío</span>
+      <p class="lede" style="margin-bottom:8px">
+        El usuario pide un blog de libros en React desde cero. Con el modo plan activado, el
+        Orquestador propone 7 pasos; el usuario responde <em>"m"</em> y agrega una exigencia —
+        investigar tendencias UI/UX modernas — y el sistema <strong>revisa el plan en caliente</strong>,
+        insertando al Investigador antes de implementar. Luego ejecuta los 8 pasos resultantes.
+      </p>
+      <div class="flow">
+        <span class="step"><b>1</b> explorador: workspace vacío</span><span class="arr">&rarr;</span>
+        <span class="step"><b>2</b> investigador: tendencias UI/UX</span><span class="arr">&rarr;</span>
+        <span class="step"><b>3-6</b> implementador: scaffold + Tailwind</span><span class="arr">&rarr;</span>
+        <span class="step"><b>7-8</b> tester: npm install · dev server</span><span class="arr">&rarr;</span>
+        <span class="step"><b>9</b> revisor: aprueba</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ SLIDE 9 · Caso 1: consola ============ -->
+  <section class="slide">
+    <div class="slide-inner">
+      <p class="eyebrow">Caso de uso 1<span class="sep">·</span>Ejecución</p>
+      <h2>Re-planificación y permisos en acción</h2>
+      <div class="console">
+        <div class="console-bar">
+          <span class="dot" style="background:#f47174"></span>
+          <span class="dot" style="background:#f5b14c"></span>
+          <span class="dot" style="background:#4ade9c"></span>
+          <span class="title">demo 1 — book blog (extracto)</span>
+        </div>
+        <pre><span class="c-user">&gt; Can you implement from scratch a basic react web app for a book blog?</span>
+
+<span class="c-orch">[orchestrator] Proposed plan:</span>  <span class="c-dim">(7 pasos)</span>
+<span class="c-dim">Approve plan? [y]es / [n]o / [m]odify:</span> <span class="c-user">m</span>
+<span class="c-user">Explore ui/ux trends to make it look modern</span>
+<span class="c-orch">[orchestrator] Revised plan:</span>  <span class="c-dim">(8 pasos — se suma el researcher)</span>
+
+<span class="c-orch">[orchestrator] step 2 -&gt; researcher:</span> Summarize the top UI/UX trends for blog-style web apps...
+  <span class="c-agent">[researcher]</span> rag_search(query='2024 UI/UX trends for blog web apps...')
+  <span class="c-agent">[researcher]</span> web_search(query='UI/UX design trends 2024 blog web apps...')
+
+<span class="c-orch">[orchestrator] step 5 -&gt; implementer:</span> Set up Tailwind CSS with Vite + React...
+<span class="c-warn">[APPROVAL REQUIRED] Run command: 'npm install -D tailwindcss...'? [y/N]: n</span>
+  <span class="c-warn">[implementer] [BLOCKED] PermissionDenied: User denied approval for command</span>
+
+<span class="c-agent">Status:  done</span>
+<span class="c-dim">Summary: Implemented a minimal, modern React + TypeScript + Vite 'Book Blog'
+web app from scratch, following current (2024) UI/UX blog trends...</span></pre>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ SLIDE 10 · Caso 1: análisis ============ -->
+  <section class="slide">
+    <div class="slide-inner">
+      <p class="eyebrow">Caso de uso 1<span class="sep">·</span>Análisis</p>
+      <h2>Resultados del primer caso</h2>
+      <div class="grid grid-2" style="margin-top:24px">
+        <div class="verdict good">
+          <h4>Qué funcionó bien</h4>
+          <ul>
+            <li><strong>Coordinación:</strong> el Orquestador delegó con éxito en investigador, implementador, tester y revisor.</li>
+            <li><strong>Planificación adaptable:</strong> el plan se revisó en caliente al recibir feedback del usuario.</li>
+            <li><strong>Ejecución real:</strong> scaffold Vite + React + TS correcto; <code class="inline">npm install</code> y <code class="inline">npm run dev</code> ejecutados y verificados.</li>
+          </ul>
+        </div>
+        <div class="verdict bad">
+          <h4>Qué se puede mejorar</h4>
+          <ul>
+            <li><strong>Permisos denegados:</strong> el usuario negó instalar Tailwind, pero el agente creó igual los archivos de configuración asumiendo la dependencia instalada.</li>
+            <li><strong>Re-planificación ante fallos:</strong> ante un paso crítico fallido, el Orquestador debería revisar el plan en vez de seguir con pasos dependientes.</li>
+            <li><strong>Updates de memoria:</strong> varias propuestas se descartaron en silencio por formato inválido; deberían validarse y corregirse.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ SLIDE 11 · Caso 2: contexto ============ -->
+  <section class="slide">
+    <div class="slide-inner">
+      <p class="eyebrow">Caso de uso 2<span class="sep">·</span>Contexto</p>
+      <h2>Diagnosticar y resolver un error 404</h2>
+      <span class="chip">Modo <b>autónomo</b> · bug plantado a propósito</span>
+      <p class="lede" style="margin-bottom:8px">
+        Se rompió la app intencionalmente moviendo <code class="inline">index.html</code> de la raíz
+        al directorio <code class="inline">public/</code>, lo que produce un 404 al servir con Vite.
+        Sin plan previo ni supervisión, el sistema debe <strong>descubrir la causa, arreglarla y
+        documentarla</strong> en un reporte Markdown. El diagnóstico combina exploración del
+        filesystem, reproducción del error con <code class="inline">curl</code> y consulta al RAG
+        con la documentación oficial de Vite.
+      </p>
+      <div class="flow">
+        <span class="step"><b>1</b> explorador: inspección inicial</span><span class="arr">&rarr;</span>
+        <span class="step"><b>2</b> tester: reproduce el 404</span><span class="arr">&rarr;</span>
+        <span class="step"><b>3-6</b> explorador + investigador: hipótesis</span><span class="arr">&rarr;</span>
+        <span class="step"><b>7</b> tester: mueve index.html y verifica</span><span class="arr">&rarr;</span>
+        <span class="step"><b>8-9</b> reporte .md + revisión</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ SLIDE 12 · Caso 2: consola ============ -->
+  <section class="slide">
+    <div class="slide-inner">
+      <p class="eyebrow">Caso de uso 2<span class="sep">·</span>Ejecución</p>
+      <h2>Diagnóstico autónomo con RAG y terminal</h2>
+      <div class="console">
+        <div class="console-bar">
+          <span class="dot" style="background:#f47174"></span>
+          <span class="dot" style="background:#f5b14c"></span>
+          <span class="dot" style="background:#4ade9c"></span>
+          <span class="title">demo 2 — diagnóstico 404 (extracto)</span>
+        </div>
+        <pre><span class="c-user">&gt; Im trying to run this web app, but im getting a 404 on my browser, can you
+diagnose the issue, fix it and make a report (md file)?</span>
+
+<span class="c-orch">[orchestrator] step 2 -&gt; tester:</span> Run 'npm run dev', try to access the app locally...
+  <span class="c-agent">[tester]</span> run_command(command='curl -i http://localhost:5173/')
+<span class="c-orch">[orchestrator] step 2 &lt;- tester:</span> <span class="c-warn">blocked</span> — dev server up, but 404 persists
+
+<span class="c-orch">[orchestrator] step 5 -&gt; researcher:</span> Search for known causes of persistent 404...
+  <span class="c-agent">[researcher]</span> rag_search(query='persistent 404 error causes in Vite React apps...')
+
+<span class="c-orch">[orchestrator] step 7 -&gt; tester:</span>
+  <span class="c-agent">[tester]</span> run_command(command='dir public')          <span class="c-dim">&lt;- ahí está index.html</span>
+  <span class="c-agent">[tester]</span> run_command(command='move public\index.html .')
+  <span class="c-agent">[tester]</span> run_command(command='npm run build')       <span class="c-dim">&lt;- build OK</span>
+
+<span class="c-agent">Status:  done</span>
+<span class="c-dim">Summary: Diagnosed the 404 error as caused by index.html being incorrectly
+located in the public/ folder rather than the project root. Fixed and
+documented in 404-diagnosis-report.md.</span>
+<span class="c-dim">Sources: rag:vite-reference/troubleshooting.md · github.com/vitejs/vite/issues/13356</span></pre>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ SLIDE 13 · Caso 2: análisis ============ -->
+  <section class="slide">
+    <div class="slide-inner">
+      <p class="eyebrow">Caso de uso 2<span class="sep">·</span>Análisis</p>
+      <h2>Resultados del segundo caso</h2>
+      <div class="grid grid-2" style="margin-top:24px">
+        <div class="verdict good">
+          <h4>Qué funcionó bien</h4>
+          <ul>
+            <li><strong>Diagnóstico acertado:</strong> identificó que Vite exige <code class="inline">index.html</code> en la raíz, citando la documentación oficial vía RAG y fuentes web.</li>
+            <li><strong>Resolución autónoma:</strong> exploró el filesystem, movió el archivo y verificó el build sin intervención humana.</li>
+            <li><strong>Entregable:</strong> generó el reporte <code class="inline">404-diagnosis-report.md</code> con causa y solución, como se pidió.</li>
+          </ul>
+        </div>
+        <div class="verdict bad">
+          <h4>Qué se puede mejorar</h4>
+          <ul>
+            <li><strong>Límites de rol:</strong> el tester movió archivos con <code class="inline">move</code>, una mutación que corresponde al implementador. Las políticas de escritura deberían cubrir también comandos de shell.</li>
+            <li><strong>Idempotencia:</strong> el paso de revisión se invocó varias veces de forma redundante, desperdiciando llamadas al LLM.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ SLIDE 14 · Langfuse: integración ============ -->
+  <section class="slide">
+    <div class="slide-inner">
+      <p class="eyebrow">Observabilidad<span class="sep">·</span>Langfuse</p>
+      <h2>Trazabilidad completa de cada ejecución</h2>
+      <p class="lede" style="margin-bottom:26px">
+        Con solo definir <code class="inline">LANGFUSE_PUBLIC_KEY</code> y
+        <code class="inline">LANGFUSE_SECRET_KEY</code> en el entorno, cada tarea genera una traza
+        completa. Sin las claves, el sistema funciona igual: la integración degrada limpiamente a no-ops.
+      </p>
+      <div class="grid grid-2">
+        <div class="card">
+          <span class="card-num">01</span>
+          <h3>Instrumentación drop-in</h3>
+          <p>El cliente de OpenAI se reemplaza por <code class="inline">langfuse.openai</code>: todas las llamadas al LLM quedan trazadas automáticamente, con tokens, latencia y costo por llamada.</p>
+        </div>
+        <div class="card">
+          <span class="card-num">02</span>
+          <h3>Spans jerárquicos por agente</h3>
+          <p>Cada turno de agente es un span con <code class="inline">@observe</code>. La traza reproduce el árbol de delegación: orquestador, subagente, herramienta, llamada LLM.</p>
+        </div>
+        <div class="card">
+          <span class="card-num">03</span>
+          <h3>Observaciones de retrieval</h3>
+          <p>Las búsquedas RAG se registran como observaciones tipo <code class="inline">retriever</code>: qué se consultó y qué chunks devolvió ChromaDB, para evaluar la calidad del retrieval.</p>
+        </div>
+        <div class="card">
+          <span class="card-num">04</span>
+          <h3>Errores marcados en la traza</h3>
+          <p>Los fallos elevan el span a nivel <code class="inline">ERROR</code> con su mensaje. Los bloqueos del Despachador y los permisos denegados quedan visibles en la línea de tiempo.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ SLIDE 15 · Langfuse: traza general ============ -->
+  <!-- Para agregar una captura: reemplazar el contenido del div.shot por <img src="ruta/captura.png" alt="..."> -->
+  <section class="slide">
+    <div class="slide-inner">
+      <p class="eyebrow">Observabilidad<span class="sep">·</span>Capturas</p>
+      <h2>Vista general de la traza</h2>
+      <div class="shot filled" style="min-height:52vh; max-height:70vh; margin-top:22px">
+        <img src="captura-1.png" alt="Traza de Langfuse: timeline del agent-run del caso 2, con el orquestador y los subagentes anidados">
+        <span class="shot-cap">Timeline del agent-run del caso 2: orquestador &rarr; invoke_explorer / tester / implementer &rarr; iteraciones y herramientas · 1m 27s · $0.17</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ SLIDE 16 · Langfuse: detalle y métricas ============ -->
+  <section class="slide">
+    <div class="slide-inner">
+      <p class="eyebrow">Observabilidad<span class="sep">·</span>Capturas</p>
+      <h2>Detalle de spans y métricas</h2>
+      <div class="grid grid-2" style="margin-top:22px">
+        <div class="shot filled" style="min-height:48vh; max-height:64vh">
+          <img src="captura-2.png" alt="Detalle de un span GENERATION en Langfuse: prompt, instrucción, modelo, tokens y costo de implementer:iteration-1">
+          <span class="shot-cap">Span implementer:iteration-1 &mdash; system prompt, instrucción, tools · gpt-4.1 · 3.934 &rarr; 399 tokens · $0.011</span>
+        </div>
+        <div class="shot filled" style="min-height:48vh; max-height:64vh">
+          <img src="captura-3.png" alt="Dashboard de Langfuse: trazas, observaciones por nivel, costo y uso por modelo">
+          <span class="shot-cap">Dashboard &mdash; 2 trazas, 280 observaciones, costo total $0.38 (gpt-4.1 + text-embedding-3-small)</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ SLIDE 17 · Conclusiones ============ -->
+  <section class="slide">
+    <div class="slide-inner">
+      <p class="eyebrow">Cierre</p>
+      <h2>Conclusiones del trabajo</h2>
+      <div class="grid grid-3" style="margin-top:24px">
+        <div class="card">
+          <span class="card-num">Demostrado</span>
+          <p>La arquitectura de un solo nivel de delegación produce flujos predecibles y auditables. Los dos casos de uso terminaron con estado <code class="inline">done</code>, verificados por el agente revisor y con fuentes citadas.</p>
+        </div>
+        <div class="card">
+          <span class="card-num">Limitaciones</span>
+          <p>El sistema no re-planifica ante pasos críticos fallidos, los límites de rol no cubren mutaciones vía comandos de shell, y hay invocaciones redundantes que desperdician llamadas al LLM.</p>
+        </div>
+        <div class="card">
+          <span class="card-num">Trabajo futuro</span>
+          <p>Re-planificación automática ante fallos, detección de comandos que mutan archivos bajo las políticas de escritura, deduplicación de invocaciones y validación de los updates de memoria.</p>
+        </div>
+      </div>
+      <p class="caption" style="text-align:left; margin-top:28px">Agent-Orchestra · Trabajo Práctico — Sistemas Multi-Agente</p>
+    </div>
+  </section>
+
+</div>
+
+<div class="progress" id="progress"></div>
+<div class="hud">
+  <span class="deck-name">Agent-Orchestra · TP</span>
+  <span class="hint">Flechas o espacio para navegar</span>
+  <div class="controls">
+    <button id="prev" aria-label="Diapositiva anterior">&larr;</button>
+    <span class="counter" id="counter">1 / 1</span>
+    <button id="next" aria-label="Diapositiva siguiente">&rarr;</button>
+  </div>
+</div>
+
+<script>
+  const slides = Array.from(document.querySelectorAll('.slide'));
+  const counter = document.getElementById('counter');
+  const progress = document.getElementById('progress');
+  let current = 0;
+
+  function show(i) {
+    current = Math.max(0, Math.min(slides.length - 1, i));
+    slides.forEach((s, idx) => {
+      s.classList.toggle('active', idx === current);
+      s.classList.toggle('before', idx < current);
+    });
+    counter.textContent = (current + 1) + ' / ' + slides.length;
+    progress.style.width = ((current + 1) / slides.length * 100) + '%';
+    history.replaceState(null, '', '#' + (current + 1));
+  }
+
+  document.getElementById('next').addEventListener('click', () => show(current + 1));
+  document.getElementById('prev').addEventListener('click', () => show(current - 1));
+
+  document.addEventListener('keydown', (e) => {
+    if (['ArrowRight', 'ArrowDown', ' ', 'PageDown'].includes(e.key)) { e.preventDefault(); show(current + 1); }
+    else if (['ArrowLeft', 'ArrowUp', 'PageUp'].includes(e.key)) { e.preventDefault(); show(current - 1); }
+    else if (e.key === 'Home') { e.preventDefault(); show(0); }
+    else if (e.key === 'End') { e.preventDefault(); show(slides.length - 1); }
+    else if (e.key.toLowerCase() === 'f') {
+      if (document.fullscreenElement) document.exitFullscreen();
+      else document.documentElement.requestFullscreen().catch(() => {});
+    }
+  });
+
+  const fromHash = parseInt(location.hash.slice(1), 10);
+  show(isNaN(fromHash) ? 0 : fromHash - 1);
+</script>
+
+</body>
+</html>
