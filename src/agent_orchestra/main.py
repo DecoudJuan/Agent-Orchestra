@@ -48,8 +48,9 @@ def build_explorer(dispatcher, config, llm_client, modes=None) -> Agent:
         "<instructions>\n"
         "1. Use list_files and read_file to carefully inspect the workspace.\n"
         "2. Analyze the project structure to gather necessary context.\n"
-        "3. Report your findings concisely and accurately.\n"
-        "4. Propose memory updates (for architecture, conventions, or dependencies) whenever you discover durable, valuable knowledge about the project.\n"
+        "3. If the repository is empty (no files found), DO NOT return blocked. Simply report that the workspace is empty and ready to be initialized from scratch.\n"
+        "4. Report your findings concisely and accurately.\n"
+        "5. Propose memory updates (for architecture, conventions, or dependencies) whenever you discover durable, valuable knowledge about the project.\n"
         "</instructions>"
     )
     return _build_subagent("explorer", prompt, ["list_files", "read_file"], dispatcher, config, llm_client, modes)
@@ -81,11 +82,12 @@ def build_implementer(dispatcher, config, llm_client, modes=None) -> Agent:
         "1. Before writing or editing a file, use read_file to check if it already exists and understand its current content.\n"
         "2. For small modifications to existing files, prefer edit_file (unique find-and-replace).\n"
         "3. For creating new files, use write_file.\n"
-        "4. Ensure every file you modify or create is meticulously tracked and listed in files_touched.\n"
+        "4. Use run_command to install dependencies or scaffold new projects (e.g., npm create vite@latest) if the task requires it.\n"
+        "5. Ensure every file you modify or create is meticulously tracked and listed in files_touched.\n"
         "</instructions>"
     )
     return _build_subagent(
-        "implementer", prompt, ["read_file", "write_file", "delete_file", "edit_file"], dispatcher, config, llm_client, modes
+        "implementer", prompt, ["read_file", "write_file", "delete_file", "edit_file", "run_command"], dispatcher, config, llm_client, modes
     )
 
 

@@ -5,5 +5,5 @@ __pycache__/
 traces/
 rag/index/
 .agent/
-project/
+my-project/
 agent.config.yaml

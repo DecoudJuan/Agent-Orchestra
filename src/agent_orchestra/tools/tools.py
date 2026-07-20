@@ -182,7 +182,11 @@ class RunCommandTool(Tool):
                 return "\n".join(parts)
             except subprocess.TimeoutExpired:
                 try:
-                    proc.kill()
+                    import os
+                    if os.name == "nt":
+                        subprocess.run(["taskkill", "/F", "/T", "/PID", str(proc.pid)], capture_output=True)
+                    else:
+                        proc.kill()
                 except Exception:
                     pass
                 stdout, stderr = proc.communicate()
