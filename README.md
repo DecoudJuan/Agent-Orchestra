@@ -1,6 +1,110 @@
 # Agent-Orchestra
 
-A multi-agent coding assistant. An orchestrator agent coordinates specialized sub-agents (explorer, researcher, implementer, tester, reviewer) through an OpenAI-compatible LLM to complete coding tasks on a target project.
+**A multi-agent coding assistant built from scratch — no LangChain, no CrewAI, no AutoGen. Just the loop.**
+
+[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
+[![OpenAI-compatible](https://img.shields.io/badge/LLM-OpenAI--compatible-10a37f.svg)](https://platform.openai.com/)
+
+An orchestrator agent breaks a coding task into steps and delegates each one to
+a specialised sub-agent — explorer, researcher, implementer, tester, reviewer —
+running against a real project on disk.
+
+It was written to find out what an agent framework is actually *doing* under the
+abstraction. Every part a framework hides is here in the open and editable: the
+tool-calling loop, the dispatcher that gates every call, the memory tiers, the
+loop detector, the retry policy.
+
+---
+
+## The design
+
+### Orchestrator–workers, exactly one level deep
+
+A sub-agent **cannot call another sub-agent.** Every instruction comes from the
+orchestrator.
+
+That is a real constraint, and it is deliberate. Let agents call each other
+freely and you get cycles, runaway fan-out, and a trace nobody can read after
+the fact. Flattening it to one level makes the whole run a linear sequence of
+orchestrator decisions — which is both auditable and debuggable, and costs
+almost nothing in capability for tasks this size.
+
+From the orchestrator's side, invoking a sub-agent looks exactly like invoking
+any other tool: send an instruction, get a result back. That symmetry is what
+keeps the loop small.
+
+The orchestrator is also the only agent that talks to the user, and it **never
+writes files or runs commands itself.** It decides *what*; sub-agents decide
+*how*.
+
+### The five workers
+
+| Agent | Owns | Notably cannot |
+|---|---|---|
+| **Explorer** | Reading project layout, conventions, installed tooling | Delete files |
+| **Researcher** | Technical lookup — local docs first, then the web, always cited | Write anything |
+| **Implementer** | Creating, editing and deleting code; reads a file before touching it | Run commands |
+| **Tester** | Running builds, tests, linters, servers; reports exact error output | Edit code |
+| **Reviewer** | Checking the changed files against what the user originally asked for | Change the work it reviews |
+
+Each agent is handed **only the tools its role needs**. The explorer has no
+delete tool, so no prompt injection can talk it into using one. The permission
+boundary is structural, not a request in a system prompt.
+
+### Three tiers of memory
+
+Context management is most of what makes a long agent run work or fall over:
+
+- **Turn context** — the agent's own messages and tool results, discarded the
+  moment its turn ends. Lets a sub-agent think without polluting global state.
+- **Task state** — what the user asked, what each agent did, which files changed,
+  what failed. Persisted to disk, which is what makes `/resume <task_id>` work
+  after you kill the process.
+- **Project memory** — long-term, survives across tasks: architecture notes,
+  code conventions, dependencies, useful commands, past decisions and fixes.
+  Each agent receives **only its own slice**, so the implementer is not reading
+  the tester's command history.
+
+### The dispatcher
+
+Every tool call from every agent goes through one chokepoint, which does four
+things:
+
+1. **Permissions** — path allowlists keep writes inside the workspace; a deny
+   list blocks destructive shell commands outright; a second list forces
+   approval for things like `npm install` and `git commit`.
+2. **Loop detection** — if an agent reads the same file three times running, it
+   is stuck in a cycle rather than making progress. The dispatcher breaks it and
+   tells the agent to try something else.
+3. **Instrumentation** — which agent called which tool, and how long it took.
+4. **Iteration cap** — 20 tool calls per turn, then the agent stops and asks the
+   user rather than burning tokens in place.
+
+### Retrieval
+
+React, TypeScript and Vite reference docs are chunked **on their own headings**
+— so a chunk is a coherent section rather than an arbitrary 512-token window —
+embedded with `text-embedding-3-small` and stored in a local ChromaDB. The
+researcher searches that first and only reaches for the web when it misses,
+which keeps the common case cheap and offline.
+
+### Not guessing
+
+The standing rule across every agent: **if you do not know, say you are blocked.**
+An agent that invents a filename, an API or a config key produces work that
+looks finished and is not, which costs more to discover than an honest stop.
+
+---
+
+## Two modes worth knowing about
+
+- **`/plan`** — the orchestrator writes out a numbered plan and waits for
+  approval before calling a single tool. You can approve, abort, or type
+  modifications that get appended to the plan.
+- **`/supervise`** — confirmation prompt before *every* action that changes the
+  system. Reads and searches stay unprompted, so it stays usable.
+
+Both are documented in full below.
 
 ---
 
