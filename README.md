@@ -1,3 +1,4 @@
+<!-- repo-check: sin-deploy -->
 # Agent-Orchestra
 
 **A multi-agent coding assistant built from scratch — no LangChain, no CrewAI, no AutoGen. Just the loop.**
@@ -108,14 +109,19 @@ Both are documented in full below.
 
 ---
 
-## Requirements
+## Stack
 
-- Python 3.11+
-- An OpenAI API key
+- Python 3.11+, no agent framework: the tool-calling loop is hand-written
+- OpenAI-compatible chat API (default model `gpt-4.1`) and `text-embedding-3-small` for embeddings
+- ChromaDB as the local vector store for the retrieval corpus
+- Optional: Tavily (web search) and Langfuse (tracing)
+- Dependencies in `requirements.txt`: `openai`, `python-dotenv`, `requests`, `pydantic`, `PyYAML`, `chromadb`, `langfuse`
+
+You need an OpenAI API key to run it.
 
 ---
 
-## Installation
+## Local setup
 
 ```bash
 git clone https://github.com/DecoudJuan/Agent-Orchestra.git
@@ -177,13 +183,15 @@ The `workspace` field must point to the project you want the agent to work on.
 
 ### 3. (Optional) Build the RAG index
 
-To let the Researcher agent search your codebase semantically, build the index once before running:
+To let the Researcher agent search the bundled React, TypeScript and Vite reference docs
+(`src/agent_orchestra/rag/corpus/`), build the index once before running:
 
 ```bash
-python -m src.agent_orchestra.rag.build --workspace ./my-project
+python -m src.agent_orchestra.rag.build_index
 ```
 
-Rerun this command whenever the codebase changes significantly.
+Rerun it after adding or editing documents in the corpus. The index is written to
+`src/agent_orchestra/rag/index/` (git-ignored). It needs `OPENAI_API_KEY` for the embeddings.
 
 ---
 
@@ -282,3 +290,32 @@ class MyCustomTool(Tool):
 ```
 
 The system will automatically discover your file on startup, register the tool, and make it available to the agents based on their configuration.
+
+---
+
+## Deploy
+
+There is no deployment: Agent-Orchestra is a coding agent you run locally from a terminal, against a project on
+your own disk (the `workspace` in `agent.config.yaml`). Nothing is hosted, so the repository has no deploy link.
+To use it, follow [Local setup](#local-setup).
+
+---
+
+## Docs
+
+- [Architecture](docs/architecture.md) — orchestrator-workers pattern, roles, memory, dispatcher (in Spanish)
+- [Example config](docs/agent.config.yaml.example) — annotated `agent.config.yaml` to copy
+- [Demo 1](docs/demo-1.md) — building a basic React web app from scratch, with console output
+- [Demo 2](docs/demo-2.md) — diagnosing and fixing a 404 error caused by a moved `index.html`
+- [LICENSE](LICENSE) - MIT
+- [Slide presentation](docs/presentacion.html) — the course presentation, with Langfuse screenshots
+
+---
+
+## License
+
+MIT, see [LICENSE](LICENSE). Copyright (c) 2026 Juan Manuel Decoud and Julian Ritondale.
+
+## Contributors
+
+Built by Juan Manuel Decoud and Julian Ritondale (julian-ritondale).
